@@ -17,6 +17,28 @@ class OrderViewSet(viewsets.ModelViewSet):
         CanCreateOrder,
         IsOrderOwnerOrStaffRole,
     )
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="start-work",
+    )
+    def start_work(self, request, pk=None):
+        order = self.get_object()
+
+        if order.editor_id != request.user.id:
+            raise PermissionDenied("Only the assigned editor can start this order.")
+
+        if order.status != Order.Status.ASSIGNED:
+            return Response(
+                {"detail": "Only assigned orders can be started."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.status = Order.Status.IN_PROGRESS
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
