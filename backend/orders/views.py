@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from .models import Order
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
-from .serializers import OrderImageSerializer, OrderSerializer
+from .serializers import OrderDeliverySerializer, OrderImageSerializer, OrderSerializer
 
 User = get_user_model()
 
@@ -17,6 +17,52 @@ class OrderViewSet(viewsets.ModelViewSet):
         CanCreateOrder,
         IsOrderOwnerOrStaffRole,
     )
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="deliver",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def deliver(self, request, pk=None):
+        order = self.get_object()
+
+        if order.editor_id != request.user.id:
+            raise PermissionDenied("Only the assigned editor can deliver this order.")
+
+        if order.status != Order.Status.IN_PROGRESS:
+            return Response(
+                {"detail": "Only orders in progress can be delivered."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = OrderDeliverySerializer(
+            data=request.data,
+            context={"request": request},
+        )
+
+        if serializer.is_valid():
+            serializer.save(
+                order=order,
+                uploaded_by=request.user,
+            )
+
+            order.status = Order.Status.DELIVERED
+            order.save(update_fields=["status", "updated_at"])
+
+            order_serializer = self.get_serializer(order)
+            return Response(
+                order_serializer.data,
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+
     @action(
         detail=True,
         methods=["post"],
