@@ -24,6 +24,10 @@ class OrderSerializer(serializers.ModelSerializer):
         source="client.username",
         read_only=True,
     )
+    editor_username = serializers.CharField(
+        source="editor.username",
+        read_only=True,
+    )
 
     class Meta:
         model = Order
@@ -38,6 +42,8 @@ class OrderSerializer(serializers.ModelSerializer):
             "images",
             "created_at",
             "updated_at",
+            "editor",
+            "editor_username",
         )
         read_only_fields = (
             "id",

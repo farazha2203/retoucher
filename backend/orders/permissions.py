@@ -8,7 +8,7 @@ class IsOrderOwnerOrStaffRole(permissions.BasePermission):
 
     staff_roles = ("admin", "support", "supervisor")
 
-    def has_object_permission(self, request, view, obj):
+def has_object_permission(self, request, view, obj):
         user = request.user
 
         if not user or not user.is_authenticated:
@@ -20,7 +20,13 @@ class IsOrderOwnerOrStaffRole(permissions.BasePermission):
         if getattr(user, "role", None) in self.staff_roles:
             return True
 
-        return obj.client_id == user.id
+        if obj.client_id == user.id:
+            return True
+
+        if getattr(obj, "editor_id", None) == user.id:
+            return True
+
+        return False
 
 
 class CanCreateOrder(permissions.BasePermission):

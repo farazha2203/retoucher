@@ -19,6 +19,15 @@ class Order(models.Model):
         on_delete=models.CASCADE,
         related_name="orders",
     )
+    
+    editor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="assigned_orders",
+        blank=True,
+        null=True,
+    )
+
     title = models.CharField(
         max_length=255,
     )

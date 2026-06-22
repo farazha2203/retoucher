@@ -3,11 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
-
+from django.contrib.auth import get_user_model
 from .models import Order
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
 from .serializers import OrderImageSerializer, OrderSerializer
 
+User = get_user_model()
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
@@ -17,6 +18,51 @@ class OrderViewSet(viewsets.ModelViewSet):
         IsOrderOwnerOrStaffRole,
     )
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="assign-editor",
+    )
+    def assign_editor(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can assign editors.")
+
+        if order.status != Order.Status.IN_REVIEW:
+            return Response(
+                {"detail": "Only orders in review can be assigned to an editor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        editor_id = request.data.get("editor_id")
+
+        if not editor_id:
+            return Response(
+                {"detail": "editor_id is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            editor = User.objects.get(id=editor_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Editor not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if getattr(editor, "role", None) != "editor":
+            return Response(
+                {"detail": "Selected user is not an editor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.editor = editor
+        order.status = Order.Status.ASSIGNED
+        order.save(update_fields=["editor", "status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
     
     def _is_staff_role(self, user):
         return user.is_staff or getattr(user, "role", None) in [
@@ -33,6 +79,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if user.role == "client":
             return Order.objects.filter(client=user)
+
+        if user.role == "editor":
+            return Order.objects.filter(editor=user)
 
         return Order.objects.none()
 
