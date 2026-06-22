@@ -9,11 +9,23 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
-    
+
+    # Accounts API
     path("api/accounts/", include("accounts.urls")),
 
+    # JWT Auth
+    path("api/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("api/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+
+    # API schema and docs
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/schema/swagger-ui/",
@@ -26,6 +38,7 @@ urlpatterns = [
         name="redoc",
     ),
 ]
+
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

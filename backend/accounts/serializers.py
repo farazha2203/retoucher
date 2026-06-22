@@ -22,6 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             "id",
+            "role",
             "is_verified",
             "date_joined",
         )
@@ -40,6 +41,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
+            "id",
             "username",
             "email",
             "password",
@@ -49,6 +51,20 @@ class RegisterSerializer(serializers.ModelSerializer):
             "role",
             "phone_number",
         )
+        read_only_fields = ("id",)
+
+    def validate_role(self, value):
+        allowed_public_roles = [
+            User.Role.CLIENT,
+            User.Role.EDITOR,
+        ]
+
+        if value not in allowed_public_roles:
+            raise serializers.ValidationError(
+                "You cannot register with this role."
+            )
+
+        return value
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password_confirm"]:
@@ -60,7 +76,9 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop("password_confirm")
         password = validated_data.pop("password")
+
         user = User(**validated_data)
         user.set_password(password)
         user.save()
+
         return user
