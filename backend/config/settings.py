@@ -39,6 +39,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "accounts",
     # Local apps will be added here later
 ]
 
@@ -131,7 +132,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
+AUTH_USER_MODEL = "accounts.User"
 
 # Django REST Framework
 
