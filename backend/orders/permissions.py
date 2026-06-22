@@ -25,8 +25,8 @@ class IsOrderOwnerOrStaffRole(permissions.BasePermission):
 
 class CanCreateOrder(permissions.BasePermission):
     """
-    Only clients can create orders.
-    Staff can create only if needed later, but currently blocked.
+    Only clients can create orders through the main create endpoint.
+    Other custom POST actions have their own permission checks.
     """
 
     def has_permission(self, request, view):
@@ -35,7 +35,7 @@ class CanCreateOrder(permissions.BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        if request.method == "POST":
+        if getattr(view, "action", None) == "create":
             return getattr(user, "role", None) == "client"
 
         return True

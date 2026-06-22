@@ -17,6 +17,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         IsOrderOwnerOrStaffRole,
     )
 
+    
+    def _is_staff_role(self, user):
+        return user.is_staff or getattr(user, "role", None) in [
+            "admin",
+            "support",
+            "supervisor",
+        ]
+
     def get_queryset(self):
         user = self.request.user
 
@@ -36,6 +44,29 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         raise PermissionDenied("Deleting orders is not allowed.")
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="start-review",
+    )
+    def start_review(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can start order review.")
+
+        if order.status != Order.Status.SUBMITTED:
+            return Response(
+                {"detail": "Only submitted orders can be moved to review."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.status = Order.Status.IN_REVIEW
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
