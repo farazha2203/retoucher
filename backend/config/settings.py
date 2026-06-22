@@ -40,6 +40,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     "accounts",
+    "orders",
     # Local apps will be added here later
 ]
 
