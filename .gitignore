@@ -64,3 +64,10 @@ docker-data/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Local test files
+test-image.jpg
+test-images/
+# Uploaded media files
+media/
+backend/media/
