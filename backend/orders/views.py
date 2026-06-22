@@ -1,7 +1,10 @@
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
 
 from .models import Order
-from .serializers import OrderSerializer
+from .serializers import OrderImageSerializer, OrderSerializer
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -21,3 +24,29 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(client=self.request.user)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="upload-image",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def upload_image(self, request, pk=None):
+        order = self.get_object()
+
+        serializer = OrderImageSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+
+        if serializer.is_valid():
+            serializer.save(order=order)
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
