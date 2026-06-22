@@ -40,6 +40,35 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["post"],
+        url_path="submit",
+    )
+    def submit(self, request, pk=None):
+        order = self.get_object()
+
+        if order.client_id != request.user.id:
+            raise PermissionDenied("Only the order owner can submit this order.")
+
+        if order.status != Order.Status.DRAFT:
+            return Response(
+                {"detail": "Only draft orders can be submitted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not order.images.exists():
+            return Response(
+                {"detail": "At least one image is required before submitting the order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.status = Order.Status.SUBMITTED
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
         url_path="upload-image",
         parser_classes=[MultiPartParser, FormParser],
     )
