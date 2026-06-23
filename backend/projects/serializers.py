@@ -1,5 +1,8 @@
 from django.utils import timezone
 from rest_framework import serializers
+from datetime import timedelta
+
+from django.db import transaction
 
 from accounts.serializers_editor import EditorProfileListSerializer
 from catalog.serializers import EditPackageSerializer, EditStyleSerializer
@@ -700,3 +703,143 @@ class ReviewSampleProposalSerializer(serializers.Serializer):
         )
 
         return proposal
+    
+class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
+    note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        project_request = self.context["project_request"]
+        request = self.context["request"]
+
+        if project_request.client_id != request.user.id and not request.user.is_staff:
+            raise serializers.ValidationError(
+                "Only the client or staff can convert this project request to an order."
+            )
+
+        if project_request.status != ProjectRequest.Status.EDITOR_SELECTED:
+            raise serializers.ValidationError(
+                "Only project requests with selected editor can be converted to order."
+            )
+
+        if project_request.target_editor_id is None:
+            raise serializers.ValidationError(
+                "Project request must have a selected editor before conversion."
+            )
+
+        if project_request.converted_order_id is not None:
+            raise serializers.ValidationError(
+                "This project request has already been converted to an order."
+            )
+
+        accepted_proposal = project_request.proposals.filter(
+            status=ProjectProposal.Status.ACCEPTED_BY_CLIENT
+        ).first()
+
+        submitted_proposal = project_request.proposals.filter(
+            editor=project_request.target_editor,
+            status=ProjectProposal.Status.SUBMITTED,
+        ).first()
+
+        # Direct editor workflow currently creates a submitted proposal and marks request editor_selected.
+        proposal = accepted_proposal or submitted_proposal
+
+        if project_request.request_type in [
+            ProjectRequest.RequestType.PUBLIC_QUOTE,
+            ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+        ] and accepted_proposal is None:
+            raise serializers.ValidationError(
+                "Public quote and sample challenge requests require an accepted proposal."
+            )
+
+        attrs["proposal"] = proposal
+
+        return attrs
+
+    @transaction.atomic
+    def save(self, **kwargs):
+        from orders.models import (
+            Order,
+            OrderActivityLog,
+            OrderImage,
+            OrderStatusHistory,
+        )
+
+        project_request = self.context["project_request"]
+        request = self.context["request"]
+        proposal = self.validated_data.get("proposal")
+        note = self.validated_data.get("note", "")
+
+        deadline = None
+        if proposal and proposal.estimated_delivery_hours:
+            deadline = timezone.now() + timedelta(hours=proposal.estimated_delivery_hours)
+        elif project_request.preferred_deadline:
+            deadline = project_request.preferred_deadline
+
+        description_parts = []
+
+        if project_request.description:
+            description_parts.append(project_request.description)
+
+        if project_request.client_note:
+            description_parts.append(f"Client note: {project_request.client_note}")
+
+        if proposal and proposal.editor_note:
+            description_parts.append(f"Editor proposal note: {proposal.editor_note}")
+
+        if note:
+            description_parts.append(f"Conversion note: {note}")
+
+        order = Order.objects.create(
+            client=project_request.client,
+            editor=project_request.target_editor.user,
+            title=project_request.title,
+            description="\n\n".join(description_parts),
+            status=Order.Status.ASSIGNED,
+            deadline=deadline,
+        )
+
+        for project_image in project_request.images.all():
+            OrderImage.objects.create(
+                order=order,
+                image=project_image.image,
+                note=project_image.caption,
+            )
+
+        OrderStatusHistory.objects.create(
+            order=order,
+            changed_by=request.user,
+            from_status="",
+            to_status=Order.Status.ASSIGNED,
+            note="Order created from project request.",
+        )
+
+        OrderActivityLog.objects.create(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.EDITOR_ASSIGNED,
+            message="Project request converted to order and editor assigned.",
+            metadata={
+                "project_request_id": project_request.id,
+                "request_type": project_request.request_type,
+                "proposal_id": proposal.id if proposal else None,
+                "proposed_price": proposal.proposed_price if proposal else None,
+                "editor_fee": proposal.editor_fee if proposal else None,
+                "estimated_delivery_hours": (
+                    proposal.estimated_delivery_hours if proposal else None
+                ),
+                "edit_style_id": project_request.edit_style_id,
+                "package_id": project_request.package_id,
+            },
+        )
+
+        project_request.status = ProjectRequest.Status.CONVERTED_TO_ORDER
+        project_request.converted_order = order
+        project_request.save(
+            update_fields=[
+                "status",
+                "converted_order",
+                "updated_at",
+            ]
+        )
+
+        return order

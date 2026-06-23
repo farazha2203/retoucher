@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.core.files.uploadedfile import SimpleUploadedFile
+from orders.models import Order, OrderActivityLog, OrderImage, OrderStatusHistory
 
 from accounts.models import EditorProfile
 from catalog.models import EditCategory, EditPackage, EditStyle
@@ -720,3 +721,249 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_client_can_convert_selected_direct_project_request_to_order(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Selected direct request",
+            description="Direct project description",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=350000,
+            editor_fee=250000,
+            estimated_delivery_hours=24,
+            editor_note="I can do this work.",
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {
+                "note": "Client confirms conversion.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+
+        order = Order.objects.first()
+        project_request.refresh_from_db()
+
+        self.assertEqual(order.client, self.client_user)
+        self.assertEqual(order.editor, self.editor_user)
+        self.assertEqual(order.status, Order.Status.ASSIGNED)
+        self.assertEqual(order.title, "Selected direct request")
+        self.assertIsNotNone(order.deadline)
+
+        self.assertEqual(project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER)
+        self.assertEqual(project_request.converted_order, order)
+
+        self.assertEqual(OrderStatusHistory.objects.count(), 1)
+        self.assertEqual(OrderActivityLog.objects.count(), 1)
+
+    def test_client_can_convert_selected_public_quote_request_to_order(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Selected public quote",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.ACCEPTED_BY_CLIENT,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=36,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+
+        order = Order.objects.first()
+        self.assertEqual(order.editor, self.editor_user)
+        self.assertEqual(order.status, Order.Status.ASSIGNED)
+
+    def test_cannot_convert_project_request_without_selected_editor(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Not selected request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_cannot_convert_public_quote_without_accepted_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Public without accepted proposal",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_cannot_convert_project_request_twice(self):
+        order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Existing order",
+            status=Order.Status.ASSIGNED,
+        )
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Already converted request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+            converted_order=order,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Order.objects.count(), 1)
+
+    def test_other_client_cannot_convert_project_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Other client should not convert",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.other_client)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_staff_can_convert_project_request_to_order(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Staff conversion request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=350000,
+            editor_fee=250000,
+            estimated_delivery_hours=24,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+
+    def test_project_request_images_are_copied_to_order_images(self):
+        from .models import ProjectRequestImage
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Request with images",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectRequestImage.objects.create(
+            project_request=project_request,
+            image="project_requests/originals/test.jpg",
+            caption="Original image",
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=350000,
+            editor_fee=250000,
+            estimated_delivery_hours=24,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(OrderImage.objects.count(), 1)
+
+        order_image = OrderImage.objects.first()
+        self.assertEqual(order_image.note, "Original image")

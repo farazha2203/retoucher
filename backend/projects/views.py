@@ -3,6 +3,7 @@ from .models import ProjectRequest
 from django.db import models
 from .permissions import IsProjectRequestOwnerOrStaff
 from .serializers import (
+    ConvertProjectRequestToOrderSerializer,
     DirectEditorDeclineSerializer,
     DirectEditorProposalCreateSerializer,
     ProjectProposalSerializer,
@@ -12,9 +13,9 @@ from .serializers import (
     ProjectRequestImageSerializer,
     ProjectRequestListSerializer,
     PublicProposalCreateSerializer,
-    SelectProjectProposalSerializer,
     ReviewSampleProposalSerializer,
     SampleProposalCreateSerializer,
+    SelectProjectProposalSerializer,
 )
 
 
@@ -101,6 +102,8 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             return SampleProposalCreateSerializer
         if self.action == "review_sample_proposal":
             return ReviewSampleProposalSerializer
+        if self.action == "convert_to_order":
+            return ConvertProjectRequestToOrderSerializer
         return ProjectRequestListSerializer
 
     def perform_create(self, serializer):
@@ -356,4 +359,37 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         return response.Response(
             output_serializer.data,
             status=status.HTTP_200_OK,
+        )
+    
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="convert-to-order",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def convert_to_order(self, request, pk=None):
+        project_request = self.get_object()
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+
+        return response.Response(
+            {
+                "id": order.id,
+                "order_id": order.id,
+                "project_request_id": project_request.id,
+                "status": order.status,
+                "title": order.title,
+                "client": order.client_id,
+                "editor": order.editor_id,
+                "deadline": order.deadline,
+            },
+            status=status.HTTP_201_CREATED,
         )
