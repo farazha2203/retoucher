@@ -10,6 +10,8 @@ from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
+from django.shortcuts import get_object_or_404
+
 from .models import (
     Order,
     OrderActivityLog,
@@ -69,6 +71,18 @@ class OrderViewSet(viewsets.ModelViewSet):
         "status",
     )
     ordering = ("-created_at",)
+
+    def _get_order_comment(self, order, comment_id):
+        return get_object_or_404(
+            order.comments.select_related(
+                "sender",
+                "resolved_by",
+                "parent",
+                "parent__sender",
+            ),
+            pk=comment_id,
+        )
+    
 
     def _parse_positive_int_query_param(self, value, field_name, default):
         if value in [None, ""]:
@@ -317,7 +331,23 @@ class OrderViewSet(viewsets.ModelViewSet):
     def comment_threads(self, request, pk=None):
         order = self.get_object()
 
-        comments = order.comments.filter(parent__isnull=True).order_by("created_at")
+        comments = (
+            order.comments
+            .select_related(
+                "sender",
+                "resolved_by",
+                "parent",
+                "parent__sender",
+            )
+            .prefetch_related(
+                "replies",
+                "replies__sender",
+                "replies__resolved_by",
+            )
+            .filter(parent__isnull=True)
+            .exclude(status=OrderComment.Status.DELETED)
+            .order_by("created_at")
+        )
 
         serializer = OrderCommentThreadSerializer(
             comments,
@@ -326,6 +356,116 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"comments/(?P<comment_id>[^/.]+)/resolve",
+    )
+    def resolve_comment(self, request, pk=None, comment_id=None):
+        order = self.get_object()
+        comment = self._get_order_comment(order, comment_id)
+
+        if comment.status == OrderComment.Status.DELETED:
+            return Response(
+                {"detail": "Deleted comments cannot be resolved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if comment.resolved_at is not None:
+            serializer = OrderCommentSerializer(
+                comment,
+                context={"request": request},
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        comment.resolved_by = request.user
+        comment.resolved_at = timezone.now()
+        comment.save(
+            update_fields=[
+                "resolved_by",
+                "resolved_at",
+                "updated_at",
+            ]
+        )
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.COMMENT_RESOLVED,
+            message="Comment resolved.",
+            metadata={
+                "comment_id": comment.id,
+                "parent_id": comment.parent_id,
+                "is_reply": comment.parent_id is not None,
+                "target_type": comment.target_type,
+                "resolved_by": request.user.id,
+            },
+        )
+
+        serializer = OrderCommentSerializer(
+            comment,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"comments/(?P<comment_id>[^/.]+)/unresolve",
+    )
+    def unresolve_comment(self, request, pk=None, comment_id=None):
+        order = self.get_object()
+        comment = self._get_order_comment(order, comment_id)
+
+        if comment.status == OrderComment.Status.DELETED:
+            return Response(
+                {"detail": "Deleted comments cannot be unresolved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if comment.resolved_at is None:
+            serializer = OrderCommentSerializer(
+                comment,
+                context={"request": request},
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        previous_resolved_by_id = comment.resolved_by_id
+
+        comment.resolved_by = None
+        comment.resolved_at = None
+        comment.save(
+            update_fields=[
+                "resolved_by",
+                "resolved_at",
+                "updated_at",
+            ]
+        )
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.COMMENT_UNRESOLVED,
+            message="Comment unresolved.",
+            metadata={
+                "comment_id": comment.id,
+                "parent_id": comment.parent_id,
+                "is_reply": comment.parent_id is not None,
+                "target_type": comment.target_type,
+                "previous_resolved_by": previous_resolved_by_id,
+                "unresolved_by": request.user.id,
+            },
+        )
+
+        serializer = OrderCommentSerializer(
+            comment,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
 
     @action(
         detail=False,
@@ -748,9 +888,27 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
 
         if request.method == "GET":
-            comments = order.comments.exclude(
-                status=OrderComment.Status.DELETED
-            ).order_by("created_at")
+            comments = (
+                order.comments
+                .select_related(
+                    "sender",
+                    "resolved_by",
+                    "parent",
+                    "parent__sender",
+                )
+                .exclude(status=OrderComment.Status.DELETED)
+                .order_by("created_at")
+            )
+
+            resolved_param = request.query_params.get("resolved")
+            resolved = self._parse_bool_query_param(resolved_param)
+
+            if resolved is True:
+                comments = comments.filter(resolved_at__isnull=False)
+
+            if resolved is False:
+                comments = comments.filter(resolved_at__isnull=True)
+
             serializer = OrderCommentSerializer(
                 comments,
                 many=True,
@@ -820,28 +978,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="comment-threads",
-    )
-    def comment_threads(self, request, pk=None):
-        order = self.get_object()
-
-        comments = (
-            order.comments.filter(parent__isnull=True)
-            .exclude(status=OrderComment.Status.DELETED)
-            .order_by("created_at")
-        )
-
-        serializer = OrderCommentThreadSerializer(
-            comments,
-            many=True,
-            context={"request": request},
-        )
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,

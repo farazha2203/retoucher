@@ -138,6 +138,12 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    resolved_by_username = serializers.CharField(
+        source="resolved_by.username",
+        read_only=True,
+    )
+    is_resolved = serializers.BooleanField(read_only=True)
+
     def validate(self, attrs):
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
 
@@ -243,6 +249,10 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "parent",
             "parent_text",
             "parent_sender_username",
+            "is_resolved",
+            "resolved_by",
+            "resolved_by_username",
+            "resolved_at",
         )
         read_only_fields = (
             "id",
@@ -255,6 +265,10 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "deleted_at",
             "created_at",
             "updated_at",
+            "is_resolved",
+            "resolved_by",
+            "resolved_by_username",
+            "resolved_at",
         )
 
     def validate(self, attrs):
@@ -280,13 +294,12 @@ class OrderCommentSerializer(serializers.ModelSerializer):
 
         return attrs
 
+
 class OrderCommentThreadSerializer(OrderCommentSerializer):
     replies = serializers.SerializerMethodField()
 
     class Meta(OrderCommentSerializer.Meta):
-        fields = OrderCommentSerializer.Meta.fields + (
-            "replies",
-        )
+        fields = OrderCommentSerializer.Meta.fields + ("replies",)
 
     def get_replies(self, obj):
         replies = obj.replies.all().order_by("created_at")
@@ -295,6 +308,7 @@ class OrderCommentThreadSerializer(OrderCommentSerializer):
             many=True,
             context=self.context,
         ).data
+
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
     changed_by_username = serializers.CharField(

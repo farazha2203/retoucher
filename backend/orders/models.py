@@ -230,6 +230,11 @@ class OrderRating(models.Model):
 
 
 class OrderComment(models.Model):
+
+    @property
+    def is_resolved(self):
+        return self.resolved_at is not None
+    
     class TargetType(models.TextChoices):
         ORDER = "order", "Order"
         IMAGE = "image", "Image"
@@ -247,6 +252,15 @@ class OrderComment(models.Model):
         on_delete=models.CASCADE,
         related_name="comments",
     )
+
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="resolved_order_comments",
+        null=True,
+        blank=True,
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
 
     parent = models.ForeignKey(
         "self",
@@ -467,6 +481,8 @@ class OrderActivityLog(models.Model):
         SETTLEMENT_STARTED = "settlement_started", "Settlement Started"
         PAYMENT_RECORDED = "payment_recorded", "Payment Recorded"
         ORDER_CLOSED = "order_closed", "Order Closed"
+        COMMENT_RESOLVED = "comment_resolved", "Comment resolved"
+        COMMENT_UNRESOLVED = "comment_unresolved", "Comment unresolved"
 
     order = models.ForeignKey(
         Order,
