@@ -362,6 +362,75 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="client-approve",
+    )
+    def client_approve(self, request, pk=None):
+        order = self.get_object()
+
+        if order.client_id != request.user.id:
+            raise PermissionDenied("Only the order owner can approve this order.")
+
+        if order.status != Order.Status.CLIENT_REVIEW:
+            return Response(
+                {"detail": "Only orders in client review can be approved by client."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.client_approved_at = timezone.now()
+        order.status = Order.Status.COMPLETED
+        order.save(
+            update_fields=[
+                "client_approved_at",
+                "status",
+                "updated_at",
+            ]
+        )
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="client-request-revision",
+    )
+    def client_request_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if order.client_id != request.user.id:
+            raise PermissionDenied("Only the order owner can request client revision.")
+
+        if order.status != Order.Status.CLIENT_REVIEW:
+            return Response(
+                {"detail": "Only orders in client review can receive client revision requests."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = OrderRevisionSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(
+                order=order,
+                requested_by=request.user,
+                source=OrderRevision.Source.CLIENT,
+            )
+
+            order.status = Order.Status.CLIENT_REVISION_REQUESTED
+            order.save(
+                update_fields=[
+                    "status",
+                    "updated_at",
+                ]
+            )
+
+            order_serializer = self.get_serializer(order)
+            return Response(order_serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(
         detail=True,
