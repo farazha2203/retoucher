@@ -1,6 +1,6 @@
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -8,7 +8,6 @@ from django.utils import timezone
 from datetime import datetime, time, timedelta
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import filters
-from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from .models import (
@@ -25,6 +24,7 @@ from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
 from .serializers import (
     OrderActivityLogSerializer,
     OrderCommentSerializer,
+    OrderCommentThreadSerializer,
     OrderDeliverySerializer,
     OrderImageSerializer,
     OrderListSerializer,
@@ -302,14 +302,31 @@ class OrderViewSet(viewsets.ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
 
         summary = (
-            queryset
-            .values("status")
+            queryset.values("status")
             .annotate(count=models.Count("id"))
             .order_by("status")
         )
 
         return Response(list(summary), status=status.HTTP_200_OK)
-    
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="comment-threads",
+    )
+    def comment_threads(self, request, pk=None):
+        order = self.get_object()
+
+        comments = order.comments.filter(parent__isnull=True).order_by("created_at")
+
+        serializer = OrderCommentThreadSerializer(
+            comments,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     @action(
         detail=False,
         methods=["get"],
@@ -334,18 +351,26 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         unassigned_orders = queryset.filter(editor__isnull=True).count()
 
-        overdue_orders = queryset.filter(
-            deadline__lt=now,
-        ).exclude(
-            status="closed",
-        ).count()
+        overdue_orders = (
+            queryset.filter(
+                deadline__lt=now,
+            )
+            .exclude(
+                status="closed",
+            )
+            .count()
+        )
 
-        due_soon_orders = queryset.filter(
-            deadline__gte=now,
-            deadline__lte=due_soon_until,
-        ).exclude(
-            status="closed",
-        ).count()
+        due_soon_orders = (
+            queryset.filter(
+                deadline__gte=now,
+                deadline__lte=due_soon_until,
+            )
+            .exclude(
+                status="closed",
+            )
+            .count()
+        )
 
         settlement_pending_orders = queryset.filter(
             status="settlement_pending",
@@ -369,7 +394,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(
         detail=False,
         methods=["get"],
@@ -420,7 +445,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(
         detail=False,
         methods=["get"],
@@ -456,7 +481,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(
         detail=False,
         methods=["get"],
@@ -469,8 +494,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
 
         workload = (
-            queryset
-            .filter(editor__isnull=False)
+            queryset.filter(editor__isnull=False)
             .values(
                 "editor_id",
                 "editor__username",
@@ -516,9 +540,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         ]
 
         return Response(results, status=status.HTTP_200_OK)
-    
-    
-    
 
     @action(
         detail=True,
@@ -728,12 +749,45 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if request.method == "GET":
             comments = order.comments.exclude(
-                status=OrderComment.Status.DELETED,
+                status=OrderComment.Status.DELETED
+            ).order_by("created_at")
+            serializer = OrderCommentSerializer(
+                comments,
+                many=True,
+                context={"request": request},
             )
-            serializer = OrderCommentSerializer(comments, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-        serializer = OrderCommentSerializer(data=request.data)
+        data = request.data.copy()
+        parent_id = data.get("parent")
+
+        if parent_id:
+            try:
+                parent_comment = order.comments.get(id=parent_id)
+            except OrderComment.DoesNotExist:
+                return Response(
+                    {"parent": "Parent comment not found for this order."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if parent_comment.status == OrderComment.Status.DELETED:
+                return Response(
+                    {"parent": "Cannot reply to a deleted comment."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            data["target_type"] = parent_comment.target_type
+            data["image"] = parent_comment.image_id
+            data["delivery"] = parent_comment.delivery_id
+            data["revision"] = parent_comment.revision_id
+
+        serializer = OrderCommentSerializer(
+            data=data,
+            context={
+                "request": request,
+                "order": order,
+            },
+        )
 
         if serializer.is_valid():
             comment = serializer.save(
@@ -745,18 +799,49 @@ class OrderViewSet(viewsets.ModelViewSet):
                 order=order,
                 actor=request.user,
                 activity_type=OrderActivityLog.ActivityType.COMMENT_CREATED,
-                message="Comment created.",
+                message=(
+                    "Comment reply created."
+                    if comment.parent_id
+                    else "Comment created."
+                ),
                 metadata={
                     "comment_id": comment.id,
+                    "parent_id": comment.parent_id,
+                    "is_reply": comment.parent_id is not None,
                     "target_type": comment.target_type,
                     "status": comment.status,
                 },
             )
 
-            output_serializer = OrderCommentSerializer(comment)
+            output_serializer = OrderCommentSerializer(
+                comment,
+                context={"request": request},
+            )
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="comment-threads",
+    )
+    def comment_threads(self, request, pk=None):
+        order = self.get_object()
+
+        comments = (
+            order.comments.filter(parent__isnull=True)
+            .exclude(status=OrderComment.Status.DELETED)
+            .order_by("created_at")
+        )
+
+        serializer = OrderCommentThreadSerializer(
+            comments,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -817,6 +902,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 message="Comment updated.",
                 metadata={
                     "comment_id": comment.id,
+                    "parent_id": comment.parent_id,
+                    "is_reply": comment.parent_id is not None,
                     "target_type": comment.target_type,
                     "status": comment.status,
                 },
@@ -858,6 +945,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                 message="Comment deleted.",
                 metadata={
                     "comment_id": comment.id,
+                    "parent_id": comment.parent_id,
+                    "is_reply": comment.parent_id is not None,
                     "target_type": comment.target_type,
                     "status": comment.status,
                 },
@@ -1338,6 +1427,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "comments",
                 "status_history",
                 "activity_logs",
+                "comments__replies",
             )
 
         return self._apply_order_filters(queryset)

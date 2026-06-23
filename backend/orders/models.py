@@ -219,6 +219,8 @@ class OrderRating(models.Model):
         if self.comment:
             self.comment = self.comment.strip()
 
+        
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
@@ -245,6 +247,15 @@ class OrderComment(models.Model):
         on_delete=models.CASCADE,
         related_name="comments",
     )
+
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        related_name="replies",
+        null=True,
+        blank=True,
+    )
+
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -297,6 +308,21 @@ class OrderComment(models.Model):
 
     def clean(self):
         super().clean()
+        
+        if self.parent_id is not None:
+            if self.pk and self.parent_id == self.pk:
+                raise ValidationError({"parent": "A comment cannot be a reply to itself."})
+
+            if self.order_id and self.parent.order_id != self.order_id:
+                raise ValidationError(
+                    {"parent": "Parent comment must belong to the same order."}
+                )
+
+            ancestor = self.parent
+            while ancestor is not None:
+                if self.pk and ancestor.pk == self.pk:
+                    raise ValidationError({"parent": "Circular comment replies are not allowed."})
+                ancestor = ancestor.parent
 
         if self.text:
             self.text = self.text.strip()

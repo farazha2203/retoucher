@@ -121,15 +121,47 @@ class OrderRatingSerializer(serializers.ModelSerializer):
         if value < 1 or value > 10:
             raise serializers.ValidationError("Score must be between 1 and 10.")
         return value
-    
+
+
 class OrderCommentSerializer(serializers.ModelSerializer):
     sender_username = serializers.CharField(
         source="sender.username",
         read_only=True,
     )
 
+    parent_text = serializers.CharField(
+        source="parent.text",
+        read_only=True,
+    )
+    parent_sender_username = serializers.CharField(
+        source="parent.sender.username",
+        read_only=True,
+    )
+
     def validate(self, attrs):
-        target_type = attrs.get("target_type", getattr(self.instance, "target_type", None))
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+
+        if parent is not None:
+            if getattr(parent, "status", None) == "deleted" and self.instance is None:
+                raise serializers.ValidationError(
+                    {"parent": "Cannot reply to a deleted comment."}
+                )
+
+            attrs["target_type"] = parent.target_type
+            attrs["image"] = parent.image
+            attrs["delivery"] = parent.delivery
+            attrs["revision"] = parent.revision
+
+        order = attrs.get("order", getattr(self.instance, "order", None))
+
+        if parent is not None and order is not None and parent.order_id != order.id:
+            raise serializers.ValidationError(
+                {"parent": "Parent comment must belong to the same order."}
+            )
+
+        target_type = attrs.get(
+            "target_type", getattr(self.instance, "target_type", None)
+        )
         image = attrs.get("image", getattr(self.instance, "image", None))
         delivery = attrs.get("delivery", getattr(self.instance, "delivery", None))
         revision = attrs.get("revision", getattr(self.instance, "revision", None))
@@ -154,13 +186,17 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         for field_name in required_fields:
             if actual_relations[field_name] is None:
                 raise serializers.ValidationError(
-                    {field_name: f"This field is required when target_type is '{target_type}'."}
+                    {
+                        field_name: f"This field is required when target_type is '{target_type}'."
+                    }
                 )
 
         for field_name, value in actual_relations.items():
             if field_name not in required_fields and value is not None:
                 raise serializers.ValidationError(
-                    {field_name: f"This field must be empty when target_type is '{target_type}'."}
+                    {
+                        field_name: f"This field must be empty when target_type is '{target_type}'."
+                    }
                 )
 
         if (x is None) != (y is None):
@@ -204,6 +240,9 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "deleted_at",
             "created_at",
             "updated_at",
+            "parent",
+            "parent_text",
+            "parent_sender_username",
         )
         read_only_fields = (
             "id",
@@ -231,21 +270,31 @@ class OrderCommentSerializer(serializers.ModelSerializer):
                 )
 
         if target_type == OrderComment.TargetType.IMAGE and not image:
-            raise serializers.ValidationError(
-                "Image comments require an image."
-            )
+            raise serializers.ValidationError("Image comments require an image.")
 
         if target_type == OrderComment.TargetType.DELIVERY and not delivery:
-            raise serializers.ValidationError(
-                "Delivery comments require a delivery."
-            )
+            raise serializers.ValidationError("Delivery comments require a delivery.")
 
         if target_type == OrderComment.TargetType.REVISION and not revision:
-            raise serializers.ValidationError(
-                "Revision comments require a revision."
-            )
+            raise serializers.ValidationError("Revision comments require a revision.")
 
         return attrs
+
+class OrderCommentThreadSerializer(OrderCommentSerializer):
+    replies = serializers.SerializerMethodField()
+
+    class Meta(OrderCommentSerializer.Meta):
+        fields = OrderCommentSerializer.Meta.fields + (
+            "replies",
+        )
+
+    def get_replies(self, obj):
+        replies = obj.replies.all().order_by("created_at")
+        return OrderCommentThreadSerializer(
+            replies,
+            many=True,
+            context=self.context,
+        ).data
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):
     changed_by_username = serializers.CharField(
@@ -267,6 +316,7 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+
 class OrderActivityLogSerializer(serializers.ModelSerializer):
     actor_username = serializers.CharField(
         source="actor.username",
@@ -286,6 +336,7 @@ class OrderActivityLogSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
 
 class OrderListSerializer(serializers.ModelSerializer):
     client_username = serializers.CharField(
@@ -319,7 +370,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
-        
+
 class OrderSerializer(serializers.ModelSerializer):
     images = OrderImageSerializer(many=True, read_only=True)
     deliveries = OrderDeliverySerializer(many=True, read_only=True)
