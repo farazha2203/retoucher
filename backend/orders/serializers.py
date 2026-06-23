@@ -144,88 +144,6 @@ class OrderCommentSerializer(serializers.ModelSerializer):
     )
     is_resolved = serializers.BooleanField(read_only=True)
 
-    def validate(self, attrs):
-        parent = attrs.get("parent", getattr(self.instance, "parent", None))
-
-        if parent is not None:
-            if getattr(parent, "status", None) == "deleted" and self.instance is None:
-                raise serializers.ValidationError(
-                    {"parent": "Cannot reply to a deleted comment."}
-                )
-
-            attrs["target_type"] = parent.target_type
-            attrs["image"] = parent.image
-            attrs["delivery"] = parent.delivery
-            attrs["revision"] = parent.revision
-
-        order = attrs.get("order", getattr(self.instance, "order", None))
-
-        if parent is not None and order is not None and parent.order_id != order.id:
-            raise serializers.ValidationError(
-                {"parent": "Parent comment must belong to the same order."}
-            )
-
-        target_type = attrs.get(
-            "target_type", getattr(self.instance, "target_type", None)
-        )
-        image = attrs.get("image", getattr(self.instance, "image", None))
-        delivery = attrs.get("delivery", getattr(self.instance, "delivery", None))
-        revision = attrs.get("revision", getattr(self.instance, "revision", None))
-        text = attrs.get("text", getattr(self.instance, "text", ""))
-        x = attrs.get("x", getattr(self.instance, "x", None))
-        y = attrs.get("y", getattr(self.instance, "y", None))
-
-        relation_map = {
-            "order": [],
-            "image": ["image"],
-            "delivery": ["delivery"],
-            "revision": ["revision"],
-        }
-
-        required_fields = relation_map.get(target_type, [])
-        actual_relations = {
-            "image": image,
-            "delivery": delivery,
-            "revision": revision,
-        }
-
-        for field_name in required_fields:
-            if actual_relations[field_name] is None:
-                raise serializers.ValidationError(
-                    {
-                        field_name: f"This field is required when target_type is '{target_type}'."
-                    }
-                )
-
-        for field_name, value in actual_relations.items():
-            if field_name not in required_fields and value is not None:
-                raise serializers.ValidationError(
-                    {
-                        field_name: f"This field must be empty when target_type is '{target_type}'."
-                    }
-                )
-
-        if (x is None) != (y is None):
-            raise serializers.ValidationError("Both x and y must be provided together.")
-
-        if x is not None and not (0 <= x <= 100):
-            raise serializers.ValidationError({"x": "x must be between 0 and 100."})
-
-        if y is not None and not (0 <= y <= 100):
-            raise serializers.ValidationError({"y": "y must be between 0 and 100."})
-
-        if target_type == "order" and x is not None:
-            raise serializers.ValidationError(
-                "Coordinates are only allowed for image, delivery, or revision comments."
-            )
-
-        if not (text or "").strip() and x is None and y is None:
-            raise serializers.ValidationError(
-                {"text": "Comment must have text or coordinate annotation."}
-            )
-
-        return attrs
-
     class Meta:
         model = OrderComment
         fields = (
@@ -253,6 +171,10 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "resolved_by",
             "resolved_by_username",
             "resolved_at",
+            "annotation_type",
+            "annotation_label",
+            "annotation_color",
+            "annotation_data",
         )
         read_only_fields = (
             "id",
@@ -272,25 +194,148 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, attrs):
-        target_type = attrs.get("target_type", OrderComment.TargetType.ORDER)
-        image = attrs.get("image")
-        delivery = attrs.get("delivery")
-        revision = attrs.get("revision")
+        parent = attrs.get("parent", getattr(self.instance, "parent", None))
 
-        if target_type == OrderComment.TargetType.ORDER:
-            if image or delivery or revision:
+        if parent is not None:
+            if getattr(parent, "status", None) == "deleted" and self.instance is None:
                 raise serializers.ValidationError(
-                    "Order comments must not include image, delivery, or revision."
+                    {"parent": "Cannot reply to a deleted comment."}
                 )
 
-        if target_type == OrderComment.TargetType.IMAGE and not image:
-            raise serializers.ValidationError("Image comments require an image.")
+            attrs["target_type"] = parent.target_type
+            attrs["image"] = parent.image
+            attrs["delivery"] = parent.delivery
+            attrs["revision"] = parent.revision
 
-        if target_type == OrderComment.TargetType.DELIVERY and not delivery:
-            raise serializers.ValidationError("Delivery comments require a delivery.")
+            # Reply does not inherit annotation unless explicitly provided.
+            attrs.setdefault("annotation_type", "none")
+            attrs.setdefault("annotation_label", "")
+            attrs.setdefault("annotation_color", "")
+            attrs.setdefault("annotation_data", {})
 
-        if target_type == OrderComment.TargetType.REVISION and not revision:
-            raise serializers.ValidationError("Revision comments require a revision.")
+        order = attrs.get("order", getattr(self.instance, "order", None))
+
+        if parent is not None and order is not None and parent.order_id != order.id:
+            raise serializers.ValidationError(
+                {"parent": "Parent comment must belong to the same order."}
+            )
+
+        target_type = attrs.get(
+            "target_type",
+            getattr(self.instance, "target_type", OrderComment.TargetType.ORDER),
+        )
+        image = attrs.get("image", getattr(self.instance, "image", None))
+        delivery = attrs.get("delivery", getattr(self.instance, "delivery", None))
+        revision = attrs.get("revision", getattr(self.instance, "revision", None))
+        text = attrs.get("text", getattr(self.instance, "text", ""))
+        x = attrs.get("x", getattr(self.instance, "x", None))
+        y = attrs.get("y", getattr(self.instance, "y", None))
+
+        relation_map = {
+            OrderComment.TargetType.ORDER: [],
+            OrderComment.TargetType.IMAGE: ["image"],
+            OrderComment.TargetType.DELIVERY: ["delivery"],
+            OrderComment.TargetType.REVISION: ["revision"],
+        }
+
+        if target_type not in relation_map:
+            raise serializers.ValidationError(
+                {"target_type": "Invalid target_type."}
+            )
+
+        required_fields = relation_map[target_type]
+        actual_relations = {
+            "image": image,
+            "delivery": delivery,
+            "revision": revision,
+        }
+
+        for field_name in required_fields:
+            if actual_relations[field_name] is None:
+                raise serializers.ValidationError(
+                    {
+                        field_name: f"This field is required when target_type is '{target_type}'."
+                    }
+                )
+
+        for field_name, value in actual_relations.items():
+            if field_name not in required_fields and value is not None:
+                raise serializers.ValidationError(
+                    {
+                        field_name: f"This field must be empty when target_type is '{target_type}'."
+                    }
+                )
+
+        if (x is None) != (y is None):
+            raise serializers.ValidationError(
+                "Both x and y must be provided together."
+            )
+
+        if x is not None and not (0 <= x <= 100):
+            raise serializers.ValidationError(
+                {"x": "x must be between 0 and 100."}
+            )
+
+        if y is not None and not (0 <= y <= 100):
+            raise serializers.ValidationError(
+                {"y": "y must be between 0 and 100."}
+            )
+
+        if target_type == OrderComment.TargetType.ORDER and x is not None:
+            raise serializers.ValidationError(
+                "Coordinates are only allowed for image, delivery, or revision comments."
+            )
+
+        annotation_type = attrs.get(
+            "annotation_type",
+            getattr(self.instance, "annotation_type", "none"),
+        )
+        annotation_color = attrs.get(
+            "annotation_color",
+            getattr(self.instance, "annotation_color", ""),
+        )
+        annotation_data = attrs.get(
+            "annotation_data",
+            getattr(self.instance, "annotation_data", {}),
+        )
+
+        if annotation_type != "none":
+            if target_type == OrderComment.TargetType.ORDER:
+                raise serializers.ValidationError(
+                    {
+                        "annotation_type": "Order-level comments cannot use rich annotations."
+                    }
+                )
+
+            if annotation_type == "point" and (x is None or y is None):
+                raise serializers.ValidationError(
+                    {
+                        "annotation_type": "Point annotations require x and y coordinates."
+                    }
+                )
+
+        if annotation_color:
+            if not isinstance(annotation_color, str):
+                raise serializers.ValidationError(
+                    {"annotation_color": "Annotation color must be a string."}
+                )
+
+            if len(annotation_color) > 20:
+                raise serializers.ValidationError(
+                    {"annotation_color": "Annotation color is too long."}
+                )
+
+        if annotation_data is None:
+            attrs["annotation_data"] = {}
+        elif not isinstance(annotation_data, dict):
+            raise serializers.ValidationError(
+                {"annotation_data": "Annotation data must be a JSON object."}
+            )
+
+        if not (text or "").strip() and x is None and y is None:
+            raise serializers.ValidationError(
+                {"text": "Comment must have text or coordinate annotation."}
+            )
 
         return attrs
 

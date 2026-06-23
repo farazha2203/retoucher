@@ -82,7 +82,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             ),
             pk=comment_id,
         )
-    
 
     def _parse_positive_int_query_param(self, value, field_name, default):
         if value in [None, ""]:
@@ -332,8 +331,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
 
         comments = (
-            order.comments
-            .select_related(
+            order.comments.select_related(
                 "sender",
                 "resolved_by",
                 "parent",
@@ -356,7 +354,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -408,7 +406,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-
 
     @action(
         detail=True,
@@ -464,8 +461,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-
 
     @action(
         detail=False,
@@ -889,8 +884,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if request.method == "GET":
             comments = (
-                order.comments
-                .select_related(
+                order.comments.select_related(
                     "sender",
                     "resolved_by",
                     "parent",
@@ -908,6 +902,41 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             if resolved is False:
                 comments = comments.filter(resolved_at__isnull=True)
+
+            has_annotation_param = request.query_params.get("has_annotation")
+            has_annotation = self._parse_bool_query_param(has_annotation_param)
+
+            if has_annotation is True:
+                comments = comments.exclude(annotation_type="none")
+
+            if has_annotation is False:
+                comments = comments.filter(annotation_type="none")
+
+            annotation_type = request.query_params.get("annotation_type")
+            if annotation_type:
+                comments = comments.filter(annotation_type=annotation_type)
+
+            target_type = request.query_params.get("target_type")
+            if target_type:
+                comments = comments.filter(target_type=target_type)
+
+            image_id = request.query_params.get("image") or request.query_params.get(
+                "image_id"
+            )
+            if image_id:
+                comments = comments.filter(image_id=image_id)
+
+            delivery_id = request.query_params.get(
+                "delivery"
+            ) or request.query_params.get("delivery_id")
+            if delivery_id:
+                comments = comments.filter(delivery_id=delivery_id)
+
+            revision_id = request.query_params.get(
+                "revision"
+            ) or request.query_params.get("revision_id")
+            if revision_id:
+                comments = comments.filter(revision_id=revision_id)
 
             serializer = OrderCommentSerializer(
                 comments,
@@ -968,6 +997,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "is_reply": comment.parent_id is not None,
                     "target_type": comment.target_type,
                     "status": comment.status,
+                    "annotation_type": comment.annotation_type,
+                    "has_annotation": comment.annotation_type != "none",
+                    "annotation_label": comment.annotation_label,
                 },
             )
 

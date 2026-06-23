@@ -247,6 +247,14 @@ class OrderComment(models.Model):
         APPROVED = "approved", "Approved"
         DELETED = "deleted", "Deleted"
 
+    class AnnotationType(models.TextChoices):
+        NONE = "none", "None"
+        POINT = "point", "Point"
+        RECTANGLE = "rectangle", "Rectangle"
+        CIRCLE = "circle", "Circle"
+        ARROW = "arrow", "Arrow"
+        FREEHAND = "freehand", "Freehand"
+
     order = models.ForeignKey(
         Order,
         on_delete=models.CASCADE,
@@ -277,6 +285,25 @@ class OrderComment(models.Model):
         null=True,
         blank=False,
     )
+
+    annotation_type = models.CharField(
+        max_length=20,
+        choices=AnnotationType.choices,
+        default=AnnotationType.NONE,
+    )
+    annotation_label = models.CharField(
+        max_length=120,
+        blank=True,
+    )
+    annotation_color = models.CharField(
+        max_length=20,
+        blank=True,
+    )
+    annotation_data = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+
     target_type = models.CharField(
         max_length=32,
         choices=TargetType.choices,
@@ -337,6 +364,23 @@ class OrderComment(models.Model):
                 if self.pk and ancestor.pk == self.pk:
                     raise ValidationError({"parent": "Circular comment replies are not allowed."})
                 ancestor = ancestor.parent
+
+        if self.annotation_type != self.AnnotationType.NONE:
+            if self.status == self.Status.DELETED:
+                raise ValidationError(
+                    {"annotation_type": "Deleted comments cannot have active annotations."}
+                )
+
+            if self.target_type == self.TargetType.ORDER:
+                raise ValidationError(
+                    {"annotation_type": "Order-level comments cannot use rich annotations."}
+                )
+
+            if self.annotation_type == self.AnnotationType.POINT:
+                if self.x is None or self.y is None:
+                    raise ValidationError(
+                        {"annotation_type": "Point annotations require x and y coordinates."}
+                    )
 
         if self.text:
             self.text = self.text.strip()
