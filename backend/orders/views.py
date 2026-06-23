@@ -12,15 +12,17 @@ from .models import (
     OrderImage,
     OrderRating,
     OrderRevision,
+    OrderStatusHistory,
 )
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
 from .serializers import (
+    OrderCommentSerializer,
     OrderDeliverySerializer,
     OrderImageSerializer,
     OrderRatingSerializer,
     OrderRevisionSerializer,
     OrderSerializer,
-    OrderCommentSerializer,
+    OrderStatusHistorySerializer,
 )
 
 User = get_user_model()
@@ -56,6 +58,141 @@ class OrderViewSet(viewsets.ModelViewSet):
             score=serializer.validated_data["score"],
             comment=serializer.validated_data.get("comment", ""),
         )
+    
+    def _log_status_change(self, order, user, from_status, to_status, note=""):
+        OrderStatusHistory.objects.create(
+            order=order,
+            changed_by=user,
+            from_status=from_status or "",
+            to_status=to_status,
+            note=note,
+        )
+
+    def _update_order_status(self, order, new_status, user, note="", extra_updates=None):
+        from_status = order.status
+
+        order.status = new_status
+        update_fields = {"status", "updated_at"}
+
+        if extra_updates:
+            for field_name, value in extra_updates.items():
+                setattr(order, field_name, value)
+                update_fields.add(field_name)
+
+        order.save(update_fields=list(update_fields))
+        self._log_status_change(
+            order=order,
+            user=user,
+            from_status=from_status,
+            to_status=new_status,
+            note=note,
+        )
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path="status-history",
+    )
+    def status_history(self, request, pk=None):
+        order = self.get_object()
+        serializer = OrderStatusHistorySerializer(order.status_history.all(), many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="start-settlement",
+    )
+    def start_settlement(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can start settlement.")
+
+        if order.status != Order.Status.COMPLETED:
+            return Response(
+                {"detail": "Only completed orders can move to settlement pending."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get("note", "").strip()
+
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.SETTLEMENT_PENDING,
+            user=request.user,
+            note=note,
+            extra_updates={
+                "settlement_started_at": timezone.now(),
+            },
+        )
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="mark-paid",
+    )
+    def mark_paid(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can mark orders as paid.")
+
+        if order.status != Order.Status.SETTLEMENT_PENDING:
+            return Response(
+                {"detail": "Only settlement pending orders can be marked as paid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get("note", "").strip()
+
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.PAID,
+            user=request.user,
+            note=note,
+            extra_updates={
+                "paid_at": timezone.now(),
+            },
+        )
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="close",
+    )
+    def close_order(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can close orders.")
+
+        if order.status != Order.Status.PAID:
+            return Response(
+                {"detail": "Only paid orders can be closed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get("note", "").strip()
+
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.CLOSED,
+            user=request.user,
+            note=note,
+            extra_updates={
+                "closed_at": timezone.now(),
+            },
+        )
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -249,8 +386,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 uploaded_by=request.user,
             )
 
-            order.status = Order.Status.DELIVERED
-            order.save(update_fields=["status", "updated_at"])
+            self._update_order_status(
+                order=order,
+                new_status=Order.Status.DELIVERED,
+                user=request.user,
+                note=serializer.validated_data.get("note", "Editor delivered files."),
+            )
 
             order_serializer = self.get_serializer(order)
             return Response(
@@ -334,8 +475,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        order.status = Order.Status.IN_PROGRESS
-        order.save(update_fields=["status", "updated_at"])
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.IN_PROGRESS,
+            user=request.user,
+            note="Editor started revision work.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -380,14 +525,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        order.client_approved_at = timezone.now()
-        order.status = Order.Status.COMPLETED
-        order.save(
-            update_fields=[
-                "client_approved_at",
-                "status",
-                "updated_at",
-            ]
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.COMPLETED,
+            user=request.user,
+            note="Client approved the order.",
+            extra_updates={
+                "client_approved_at": timezone.now(),
+            },
         )
 
         serializer = self.get_serializer(order)
@@ -419,12 +564,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 source=OrderRevision.Source.CLIENT,
             )
 
-            order.status = Order.Status.CLIENT_REVISION_REQUESTED
-            order.save(
-                update_fields=[
-                    "status",
-                    "updated_at",
-                ]
+            self._update_order_status(
+                order=order,
+                new_status=Order.Status.CLIENT_REVISION_REQUESTED,
+                user=request.user,
+                note=serializer.validated_data["note"],
             )
 
             order_serializer = self.get_serializer(order)
@@ -464,8 +608,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 text=note,
             )
 
-        order.status = Order.Status.REVISION_REQUIRED
-        order.save(update_fields=["status", "updated_at"])
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.REVISION_REQUIRED,
+            user=request.user,
+            note=note or "Supervisor accepted client revision request.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -502,8 +650,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 text=note,
             )
 
-        order.status = Order.Status.CLIENT_REVIEW
-        order.save(update_fields=["status", "updated_at"])
+        self._update_order_status(
+            order=order,
+            new_status=Order.Status.CLIENT_REVIEW,
+            user=request.user,
+            note=note or "Supervisor rejected client revision request.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -635,14 +787,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 serializer=serializer,
             )
 
-            order.supervisor_approved_at = timezone.now()
-            order.status = Order.Status.CLIENT_REVIEW
-            order.save(
-                update_fields=[
-                    "supervisor_approved_at",
-                    "status",
-                    "updated_at",
-                ]
+            self._update_order_status(
+                order=order,
+                new_status=Order.Status.CLIENT_REVIEW,
+                user=request.user,
+                note="Supervisor approved the order.",
+                extra_updates={
+                    "supervisor_approved_at": timezone.now(),
+                },
             )
 
             order_serializer = self.get_serializer(order)
@@ -678,14 +830,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 source=OrderRevision.Source.SUPERVISOR,
             )
 
-            order.revision_count += 1
-            order.status = Order.Status.REVISION_REQUIRED
-            order.save(
-                update_fields=[
-                    "revision_count",
-                    "status",
-                    "updated_at",
-                ]
+            self._update_order_status(
+                order=order,
+                new_status=Order.Status.REVISION_REQUIRED,
+                user=request.user,
+                note=serializer.validated_data["note"],
+                extra_updates={
+                    "revision_count": order.revision_count + 1,
+                },
             )
 
             order_serializer = self.get_serializer(order)

@@ -7,6 +7,7 @@ from .models import (
     OrderImage,
     OrderRating,
     OrderRevision,
+    OrderStatusHistory,
 )
 
 
@@ -138,5 +139,27 @@ class OrderCommentAdmin(admin.ModelAdmin):
         "target_type",
         "status",
         "is_edited",
+        "created_at",
+    )
+
+@admin.register(OrderStatusHistory)
+class OrderStatusHistoryAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "created_at",
+    )
+    search_fields = (
+        "order__title",
+        "changed_by__username",
+        "changed_by__email",
+        "note",
+    )
+    list_filter = (
+        "from_status",
+        "to_status",
         "created_at",
     )

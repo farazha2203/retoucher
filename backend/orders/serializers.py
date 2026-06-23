@@ -7,6 +7,7 @@ from .models import (
     OrderImage,
     OrderRating,
     OrderRevision,
+    OrderStatusHistory,
 )
 
 
@@ -175,6 +176,25 @@ class OrderCommentSerializer(serializers.ModelSerializer):
 
         return attrs
 
+class OrderStatusHistorySerializer(serializers.ModelSerializer):
+    changed_by_username = serializers.CharField(
+        source="changed_by.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = OrderStatusHistory
+        fields = (
+            "id",
+            "order",
+            "changed_by",
+            "changed_by_username",
+            "from_status",
+            "to_status",
+            "note",
+            "created_at",
+        )
+        read_only_fields = fields
 
 class OrderSerializer(serializers.ModelSerializer):
     images = OrderImageSerializer(many=True, read_only=True)
@@ -182,6 +202,7 @@ class OrderSerializer(serializers.ModelSerializer):
     revisions = OrderRevisionSerializer(many=True, read_only=True)
     ratings = OrderRatingSerializer(many=True, read_only=True)
     comments = OrderCommentSerializer(many=True, read_only=True)
+    status_history = OrderStatusHistorySerializer(many=True, read_only=True)
     client_username = serializers.CharField(
         source="client.username",
         read_only=True,
@@ -211,6 +232,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "revisions",
             "ratings",
             "comments",
+            "status_history",
             "created_at",
             "updated_at",
         )
@@ -229,6 +251,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "revisions",
             "ratings",
             "comments",
+            "status_history",
             "created_at",
             "updated_at",
         )

@@ -20,6 +20,8 @@ class Order(models.Model):
         )
         COMPLETED = "completed", "Completed"
         SETTLEMENT_PENDING = "settlement_pending", "Settlement Pending"
+        PAID = "paid", "Paid"
+        CLOSED = "closed", "Closed"
 
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -31,6 +33,19 @@ class Order(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         related_name="assigned_orders",
+        blank=True,
+        null=True,
+    )
+
+    settlement_started_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+    paid_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+    closed_at = models.DateTimeField(
         blank=True,
         null=True,
     )
@@ -306,3 +321,36 @@ class OrderComment(models.Model):
 
     def __str__(self):
         return f"Comment #{self.id} on order #{self.order_id}"
+    
+class OrderStatusHistory(models.Model):
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="status_history",
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="order_status_changes",
+        blank=True,
+        null=True,
+    )
+    from_status = models.CharField(
+        max_length=32,
+        blank=True,
+    )
+    to_status = models.CharField(
+        max_length=32,
+    )
+    note = models.TextField(
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ("created_at",)
+
+    def __str__(self):
+        return f"Order #{self.order_id}: {self.from_status} -> {self.to_status}"
