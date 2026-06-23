@@ -9,8 +9,44 @@ from .models import (
     OrderRating,
     OrderRevision,
     OrderStatusHistory,
+    OrderNotification,
 )
 
+class OrderNotificationSerializer(serializers.ModelSerializer):
+    order_title = serializers.CharField(
+        source="order.title",
+        read_only=True,
+    )
+    actor_username = serializers.CharField(
+        source="actor.username",
+        read_only=True,
+    )
+    recipient_username = serializers.CharField(
+        source="recipient.username",
+        read_only=True,
+    )
+    is_read = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = OrderNotification
+        fields = (
+            "id",
+            "order",
+            "order_title",
+            "activity_log",
+            "actor",
+            "actor_username",
+            "recipient",
+            "recipient_username",
+            "notification_type",
+            "title",
+            "message",
+            "metadata",
+            "is_read",
+            "read_at",
+            "created_at",
+        )
+        read_only_fields = fields
 
 class OrderImageSerializer(serializers.ModelSerializer):
     class Meta:

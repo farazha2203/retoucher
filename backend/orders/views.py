@@ -21,6 +21,7 @@ from .models import (
     OrderRating,
     OrderRevision,
     OrderStatusHistory,
+    OrderNotification,
 )
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
 from .serializers import (
@@ -34,6 +35,7 @@ from .serializers import (
     OrderRevisionSerializer,
     OrderSerializer,
     OrderStatusHistorySerializer,
+    OrderNotificationSerializer,
 )
 
 User = get_user_model()
@@ -275,14 +277,102 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note,
         )
 
-    def _log_activity(self, order, actor, activity_type, message="", metadata=None):
-        OrderActivityLog.objects.create(
+    def _get_order_notification_recipients(self, order, actor=None):
+        recipients = []
+
+        if order.client_id:
+            recipients.append(order.client)
+
+        if order.editor_id:
+            recipients.append(order.editor)
+
+        unique_recipients = []
+        seen_ids = set()
+
+        for user in recipients:
+            if user is None:
+                continue
+
+            if actor is not None and user.id == actor.id:
+                continue
+
+            if user.id in seen_ids:
+                continue
+
+            seen_ids.add(user.id)
+            unique_recipients.append(user)
+
+        return unique_recipients
+
+    def _build_notification_title(self, activity_type):
+        title_map = {
+            "comment_created": "New comment",
+            "comment_updated": "Comment updated",
+            "comment_deleted": "Comment deleted",
+            "comment_resolved": "Comment resolved",
+            "comment_unresolved": "Comment unresolved",
+            "editor_assigned": "Editor assigned",
+            "delivery_uploaded": "New delivery uploaded",
+            "revision_requested": "Revision requested",
+            "rating_created": "Rating submitted",
+            "rating_updated": "Rating updated",
+            "status_changed": "Order status changed",
+        }
+
+        return title_map.get(activity_type, "New activity on order")
+
+    def _create_order_notifications(
+        self,
+        order,
+        actor,
+        activity_log,
+        activity_type,
+        message,
+        metadata=None,
+    ):
+        recipients = self._get_order_notification_recipients(
             order=order,
             actor=actor,
+        )
+
+        notifications = []
+
+        for recipient in recipients:
+            notifications.append(
+                OrderNotification(
+                    recipient=recipient,
+                    actor=actor if getattr(actor, "is_authenticated", False) else None,
+                    order=order,
+                    activity_log=activity_log,
+                    notification_type=activity_type,
+                    title=self._build_notification_title(activity_type),
+                    message=message or "",
+                    metadata=metadata or {},
+                )
+            )
+
+        if notifications:
+            OrderNotification.objects.bulk_create(notifications)
+
+    def _log_activity(self, order, actor, activity_type, message, metadata=None):
+        activity_log = OrderActivityLog.objects.create(
+            order=order,
+            actor=actor if getattr(actor, "is_authenticated", False) else None,
             activity_type=activity_type,
             message=message,
             metadata=metadata or {},
         )
+
+        self._create_order_notifications(
+            order=order,
+            actor=actor,
+            activity_log=activity_log,
+            activity_type=activity_type,
+            message=message,
+            metadata=metadata or {},
+        )
+
+        return activity_log
 
     def _update_order_status(
         self, order, new_status, user, note="", extra_updates=None
@@ -321,6 +411,126 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(list(summary), status=status.HTTP_200_OK)
+    
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="notifications",
+    )
+    def notifications(self, request):
+        queryset = (
+            OrderNotification.objects
+            .select_related(
+                "order",
+                "actor",
+                "recipient",
+                "activity_log",
+            )
+            .filter(recipient=request.user)
+            .order_by("-created_at")
+        )
+
+        unread_param = request.query_params.get("unread")
+        unread = self._parse_bool_query_param(unread_param)
+
+        if unread is True:
+            queryset = queryset.filter(read_at__isnull=True)
+
+        if unread is False:
+            queryset = queryset.filter(read_at__isnull=False)
+
+        order_id = request.query_params.get("order") or request.query_params.get("order_id")
+        if order_id:
+            queryset = queryset.filter(order_id=order_id)
+
+        notification_type = request.query_params.get("type") or request.query_params.get("notification_type")
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = OrderNotificationSerializer(
+                page,
+                many=True,
+                context={"request": request},
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = OrderNotificationSerializer(
+            queryset,
+            many=True,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="notifications/unread-count",
+    )
+    def notification_unread_count(self, request):
+        unread_count = OrderNotification.objects.filter(
+            recipient=request.user,
+            read_at__isnull=True,
+        ).count()
+
+        return Response(
+            {"unread_count": unread_count},
+            status=status.HTTP_200_OK,
+        )
+    
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path=r"notifications/(?P<notification_id>[^/.]+)/mark-read",
+    )
+    def mark_notification_read(self, request, notification_id=None):
+        notification = get_object_or_404(
+            OrderNotification.objects.select_related(
+                "order",
+                "actor",
+                "recipient",
+                "activity_log",
+            ),
+            pk=notification_id,
+            recipient=request.user,
+        )
+
+        if notification.read_at is None:
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["read_at"])
+
+        serializer = OrderNotificationSerializer(
+            notification,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="notifications/mark-all-read",
+    )
+    def mark_all_notifications_read(self, request):
+        now = timezone.now()
+
+        updated_count = OrderNotification.objects.filter(
+            recipient=request.user,
+            read_at__isnull=True,
+        ).update(read_at=now)
+
+        return Response(
+            {
+                "updated_count": updated_count,
+                "read_at": now,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
 
     @action(
         detail=True,

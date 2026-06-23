@@ -560,3 +560,51 @@ class OrderActivityLog(models.Model):
 
     def __str__(self):
         return f"Order #{self.order_id} - {self.activity_type}"
+    
+class OrderNotification(models.Model):
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="order_notifications",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="sent_order_notifications",
+        null=True,
+        blank=True,
+    )
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    activity_log = models.ForeignKey(
+        OrderActivityLog,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    notification_type = models.CharField(max_length=80)
+    title = models.CharField(max_length=200)
+    message = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["recipient", "read_at"]),
+            models.Index(fields=["recipient", "created_at"]),
+            models.Index(fields=["order", "created_at"]),
+            models.Index(fields=["notification_type"]),
+        ]
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+    def __str__(self):
+        return f"Notification #{self.pk} for {self.recipient_id}"
