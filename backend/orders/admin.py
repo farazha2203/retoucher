@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import Order, OrderDelivery, OrderImage, OrderRating, OrderRevision
+from .models import (
+    Order,
+    OrderComment,
+    OrderDelivery,
+    OrderImage,
+    OrderRating,
+    OrderRevision,
+)
 
 
 class OrderImageInline(admin.TabularInline):
@@ -81,6 +88,7 @@ class OrderRatingAdmin(admin.ModelAdmin):
         "rated_by",
         "score",
         "created_at",
+        "updated_at",
     )
     search_fields = (
         "order__title",
@@ -92,6 +100,7 @@ class OrderRatingAdmin(admin.ModelAdmin):
         "source",
         "score",
         "created_at",
+        "updated_at",
     )
 
 @admin.register(OrderImage)
@@ -105,4 +114,29 @@ class OrderImageAdmin(admin.ModelAdmin):
     search_fields = (
         "order__title",
         "order__client__username",
+    )
+
+@admin.register(OrderComment)
+class OrderCommentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "sender",
+        "target_type",
+        "status",
+        "is_edited",
+        "created_at",
+        "updated_at",
+    )
+    search_fields = (
+        "order__title",
+        "sender__username",
+        "sender__email",
+        "text",
+    )
+    list_filter = (
+        "target_type",
+        "status",
+        "is_edited",
+        "created_at",
     )
