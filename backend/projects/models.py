@@ -125,6 +125,9 @@ class ProjectRequestImage(models.Model):
 class ProjectProposal(models.Model):
     class Status(models.TextChoices):
         SUBMITTED = "submitted", "Submitted"
+        UNDER_REVIEW = "under_review", "Under review"
+        APPROVED = "approved", "Approved"
+        REJECTED_BY_SUPERVISOR = "rejected_by_supervisor", "Rejected by supervisor"
         ACCEPTED_BY_CLIENT = "accepted_by_client", "Accepted by client"
         DECLINED_BY_EDITOR = "declined_by_editor", "Declined by editor"
         REJECTED_BY_CLIENT = "rejected_by_client", "Rejected by client"
@@ -155,6 +158,30 @@ class ProjectProposal(models.Model):
     estimated_delivery_hours = models.PositiveIntegerField(default=24)
 
     editor_note = models.TextField(blank=True)
+    sample_file = models.FileField(
+        upload_to="project_proposals/samples/",
+        blank=True,
+        null=True,
+    )
+    sample_note = models.TextField(blank=True)
+
+    supervisor_score = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Score from 1 to 10.",
+    )
+    supervisor_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_project_proposals",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    is_visible_to_client = models.BooleanField(default=True)
+    
     client_note = models.TextField(blank=True)
 
     submitted_at = models.DateTimeField(auto_now_add=True)

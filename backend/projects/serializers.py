@@ -44,6 +44,13 @@ class ProjectProposalSerializer(serializers.ModelSerializer):
             "editor_fee",
             "estimated_delivery_hours",
             "editor_note",
+            "sample_file",
+            "sample_note",
+            "supervisor_score",
+            "supervisor_note",
+            "reviewed_by",
+            "reviewed_at",
+            "is_visible_to_client",
             "client_note",
             "submitted_at",
             "updated_at",
@@ -57,6 +64,11 @@ class ProjectProposalSerializer(serializers.ModelSerializer):
             "editor_display_name",
             "status",
             "status_display",
+            "supervisor_score",
+            "supervisor_note",
+            "reviewed_by",
+            "reviewed_at",
+            "is_visible_to_client",
             "submitted_at",
             "updated_at",
             "accepted_at",
@@ -482,6 +494,7 @@ class SelectProjectProposalSerializer(serializers.Serializer):
 
         if project_request.status not in [
             ProjectRequest.Status.OPEN_FOR_QUOTES,
+            ProjectRequest.Status.OPEN_FOR_SAMPLES,
             ProjectRequest.Status.EDITOR_SELECTED,
         ]:
             raise serializers.ValidationError(
@@ -493,10 +506,20 @@ class SelectProjectProposalSerializer(serializers.Serializer):
                 "Proposal does not belong to this project request."
             )
 
-        if proposal.status != ProjectProposal.Status.SUBMITTED:
-            raise serializers.ValidationError(
-                "Only submitted proposals can be selected."
-            )
+        if project_request.request_type == ProjectRequest.RequestType.SAMPLE_CHALLENGE:
+            if proposal.status != ProjectProposal.Status.APPROVED:
+                raise serializers.ValidationError(
+                    "Only approved sample proposals can be selected."
+                )
+            if not proposal.is_visible_to_client:
+                raise serializers.ValidationError(
+                    "This sample proposal is not visible to client."
+                )
+        else:
+            if proposal.status != ProjectProposal.Status.SUBMITTED:
+                raise serializers.ValidationError(
+                    "Only submitted proposals can be selected."
+                )
 
         return attrs
 
@@ -522,5 +545,158 @@ class SelectProjectProposalSerializer(serializers.Serializer):
         project_request.target_editor = proposal.editor
         project_request.status = ProjectRequest.Status.EDITOR_SELECTED
         project_request.save(update_fields=["target_editor", "status", "updated_at"])
+
+        return proposal
+
+
+class SampleProposalCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectProposal
+        fields = [
+            "id",
+            "proposed_price",
+            "editor_fee",
+            "estimated_delivery_hours",
+            "editor_note",
+            "sample_file",
+            "sample_note",
+        ]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+
+        if project_request.request_type != ProjectRequest.RequestType.SAMPLE_CHALLENGE:
+            raise serializers.ValidationError(
+                "This action is only available for sample challenge requests."
+            )
+
+        if project_request.status != ProjectRequest.Status.OPEN_FOR_SAMPLES:
+            raise serializers.ValidationError(
+                "This project request is not open for sample submissions."
+            )
+
+        if (
+            not editor_profile.is_available
+            or not editor_profile.accepts_sample_challenges
+        ):
+            raise serializers.ValidationError(
+                "You are not available for sample challenge requests."
+            )
+
+        if not editor_profile.skills.filter(id=project_request.edit_style_id).exists():
+            raise serializers.ValidationError("You do not support this edit style.")
+
+        if ProjectProposal.objects.filter(
+            project_request=project_request,
+            editor=editor_profile,
+        ).exists():
+            raise serializers.ValidationError(
+                "You have already submitted a sample proposal for this project request."
+            )
+
+        proposed_price = attrs.get("proposed_price", 0)
+        if proposed_price <= 0:
+            raise serializers.ValidationError(
+                {"proposed_price": "Proposed price must be greater than zero."}
+            )
+
+        estimated_delivery_hours = attrs.get("estimated_delivery_hours", 0)
+        if estimated_delivery_hours <= 0:
+            raise serializers.ValidationError(
+                {
+                    "estimated_delivery_hours": "Estimated delivery hours must be greater than zero."
+                }
+            )
+
+        sample_file = attrs.get("sample_file")
+        if not sample_file:
+            raise serializers.ValidationError(
+                {"sample_file": "Sample challenge proposal requires a sample file."}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+
+        return ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            is_visible_to_client=False,
+            **validated_data,
+        )
+
+
+class ReviewSampleProposalSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["approve", "reject"])
+    supervisor_score = serializers.IntegerField(
+        required=False, min_value=1, max_value=10
+    )
+    supervisor_note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        proposal = self.context["proposal"]
+
+        if (
+            proposal.project_request.request_type
+            != ProjectRequest.RequestType.SAMPLE_CHALLENGE
+        ):
+            raise serializers.ValidationError(
+                "This proposal does not belong to a sample challenge request."
+            )
+
+        if proposal.status not in [
+            ProjectProposal.Status.UNDER_REVIEW,
+            ProjectProposal.Status.SUBMITTED,
+            ProjectProposal.Status.APPROVED,
+            ProjectProposal.Status.REJECTED_BY_SUPERVISOR,
+        ]:
+            raise serializers.ValidationError("This proposal cannot be reviewed.")
+
+        action = attrs.get("action")
+        supervisor_score = attrs.get("supervisor_score")
+
+        if action == "approve" and supervisor_score is None:
+            raise serializers.ValidationError(
+                {"supervisor_score": "Supervisor score is required when approving."}
+            )
+
+        return attrs
+
+    def save(self, **kwargs):
+        request = self.context["request"]
+        proposal = self.context["proposal"]
+
+        action = self.validated_data["action"]
+        supervisor_score = self.validated_data.get("supervisor_score")
+        supervisor_note = self.validated_data.get("supervisor_note", "")
+
+        if action == "approve":
+            proposal.status = ProjectProposal.Status.APPROVED
+            proposal.is_visible_to_client = True
+            proposal.supervisor_score = supervisor_score
+        else:
+            proposal.status = ProjectProposal.Status.REJECTED_BY_SUPERVISOR
+            proposal.is_visible_to_client = False
+            proposal.supervisor_score = supervisor_score
+
+        proposal.supervisor_note = supervisor_note
+        proposal.reviewed_by = request.user
+        proposal.reviewed_at = timezone.now()
+        proposal.save(
+            update_fields=[
+                "status",
+                "is_visible_to_client",
+                "supervisor_score",
+                "supervisor_note",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
 
         return proposal

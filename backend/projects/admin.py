@@ -12,10 +12,17 @@ class ProjectProposalInline(admin.TabularInline):
         "editor_fee",
         "estimated_delivery_hours",
         "editor_note",
+        "sample_file",
+        "sample_note",
+        "supervisor_score",
+        "supervisor_note",
+        "reviewed_by",
+        "reviewed_at",
+        "is_visible_to_client",
         "submitted_at",
         "accepted_at",
     )
-    readonly_fields = ("submitted_at", "accepted_at")
+    readonly_fields = ("submitted_at", "accepted_at", "reviewed_at")
 
 
 class ProjectRequestImageInline(admin.TabularInline):
@@ -95,12 +102,17 @@ class ProjectProposalAdmin(admin.ModelAdmin):
         "proposed_price",
         "editor_fee",
         "estimated_delivery_hours",
+        "supervisor_score",
+        "is_visible_to_client",
         "submitted_at",
+        "reviewed_at",
         "accepted_at",
     )
     list_filter = (
         "status",
+        "is_visible_to_client",
         "project_request__request_type",
+        "supervisor_score",
         "submitted_at",
     )
     search_fields = (
@@ -108,5 +120,13 @@ class ProjectProposalAdmin(admin.ModelAdmin):
         "editor__user__username",
         "editor__display_name",
         "editor_note",
+        "sample_note",
+        "supervisor_note",
+    )
+    readonly_fields = (
+        "submitted_at",
+        "updated_at",
+        "reviewed_at",
+        "accepted_at",
     )
     ordering = ("-submitted_at",)

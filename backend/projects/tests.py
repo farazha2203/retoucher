@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from accounts.models import EditorProfile
 from catalog.models import EditCategory, EditPackage, EditStyle
@@ -524,3 +525,198 @@ class ProjectRequestAPITests(TestCase):
 
         self.assertEqual(selected.status, ProjectProposal.Status.ACCEPTED_BY_CLIENT)
         self.assertEqual(rejected.status, ProjectProposal.Status.REJECTED_BY_CLIENT)
+
+    def test_editor_can_list_matching_sample_challenge_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.get("/api/projects/requests/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], project_request.id)
+
+    def test_editor_can_submit_sample_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        sample_file = SimpleUploadedFile(
+            "sample.jpg",
+            b"fake-image-content",
+            content_type="image/jpeg",
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/sample-proposal/",
+            {
+                "proposed_price": 450000,
+                "editor_fee": 320000,
+                "estimated_delivery_hours": 48,
+                "editor_note": "I edited the sample with natural skin texture.",
+                "sample_note": "Skin cleanup, color balance, and natural contrast.",
+                "sample_file": sample_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+        proposal = ProjectProposal.objects.first()
+        self.assertEqual(proposal.status, ProjectProposal.Status.UNDER_REVIEW)
+        self.assertFalse(proposal.is_visible_to_client)
+
+    def test_staff_can_approve_sample_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/review-sample/",
+            {
+                "action": "approve",
+                "supervisor_score": 9,
+                "supervisor_note": "Good natural retouch with realistic skin texture.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, ProjectProposal.Status.APPROVED)
+        self.assertEqual(proposal.supervisor_score, 9)
+        self.assertTrue(proposal.is_visible_to_client)
+        self.assertEqual(proposal.reviewed_by, self.staff_user)
+
+    def test_staff_can_reject_sample_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/review-sample/",
+            {
+                "action": "reject",
+                "supervisor_note": "Over-smoothed skin.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, ProjectProposal.Status.REJECTED_BY_SUPERVISOR)
+        self.assertFalse(proposal.is_visible_to_client)
+
+    def test_client_can_select_approved_sample_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.APPROVED,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            supervisor_score=9,
+            is_visible_to_client=True,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {
+                "client_note": "I choose this sample edit.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+        project_request.refresh_from_db()
+
+        self.assertEqual(proposal.status, ProjectProposal.Status.ACCEPTED_BY_CLIENT)
+        self.assertEqual(project_request.status, ProjectRequest.Status.EDITOR_SELECTED)
+        self.assertEqual(project_request.target_editor, self.editor_profile)
+
+    def test_client_cannot_select_unapproved_sample_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample challenge request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

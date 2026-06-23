@@ -13,6 +13,8 @@ from .serializers import (
     ProjectRequestListSerializer,
     PublicProposalCreateSerializer,
     SelectProjectProposalSerializer,
+    ReviewSampleProposalSerializer,
+    SampleProposalCreateSerializer,
 )
 
 
@@ -57,6 +59,11 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
                         status=ProjectRequest.Status.OPEN_FOR_QUOTES,
                         edit_style__in=editor_profile.skills.all(),
                     )
+                    | models.Q(
+                        request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+                        status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+                        edit_style__in=editor_profile.skills.all(),
+                    )
                 )
             else:
                 queryset = queryset.filter(client=user)
@@ -90,6 +97,10 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             return PublicProposalCreateSerializer
         if self.action == "select_proposal":
             return SelectProjectProposalSerializer
+        if self.action == "sample_proposal":
+            return SampleProposalCreateSerializer
+        if self.action == "review_sample_proposal":
+            return ReviewSampleProposalSerializer
         return ProjectRequestListSerializer
 
     def perform_create(self, serializer):
@@ -196,7 +207,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
-    
+
     @decorators.action(
         detail=True,
         methods=["post"],
@@ -272,3 +283,77 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
     
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="sample-proposal",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def sample_proposal(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can submit sample proposals."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path=r"proposals/(?P<proposal_id>[^/.]+)/review-sample",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def review_sample_proposal(self, request, pk=None, proposal_id=None):
+        project_request = self.get_object()
+
+        try:
+            proposal = project_request.proposals.get(id=proposal_id)
+        except Exception:
+            return response.Response(
+                {"detail": "Proposal not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "proposal": proposal,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        reviewed_proposal = serializer.save()
+
+        output_serializer = ProjectProposalSerializer(
+            reviewed_proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
