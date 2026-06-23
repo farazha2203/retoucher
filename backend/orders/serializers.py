@@ -12,6 +12,7 @@ from .models import (
     OrderNotification,
 )
 
+
 class OrderNotificationSerializer(serializers.ModelSerializer):
     order_title = serializers.CharField(
         source="order.title",
@@ -47,6 +48,7 @@ class OrderNotificationSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = fields
+
 
 class OrderImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -230,12 +232,25 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, attrs):
-        parent = attrs.get("parent", getattr(self.instance, "parent", None))
+        order = self.context.get("order")
+
+        if order is None and self.instance is not None:
+            order = self.instance.order
+
+        parent = attrs.get(
+            "parent",
+            getattr(self.instance, "parent", None),
+        )
 
         if parent is not None:
             if getattr(parent, "status", None) == "deleted" and self.instance is None:
                 raise serializers.ValidationError(
                     {"parent": "Cannot reply to a deleted comment."}
+                )
+
+            if order is not None and parent.order_id != order.id:
+                raise serializers.ValidationError(
+                    {"parent": "Parent comment must belong to the same order."}
                 )
 
             attrs["target_type"] = parent.target_type
@@ -249,23 +264,50 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             attrs.setdefault("annotation_color", "")
             attrs.setdefault("annotation_data", {})
 
-        order = attrs.get("order", getattr(self.instance, "order", None))
-
-        if parent is not None and order is not None and parent.order_id != order.id:
-            raise serializers.ValidationError(
-                {"parent": "Parent comment must belong to the same order."}
-            )
-
         target_type = attrs.get(
             "target_type",
             getattr(self.instance, "target_type", OrderComment.TargetType.ORDER),
         )
-        image = attrs.get("image", getattr(self.instance, "image", None))
-        delivery = attrs.get("delivery", getattr(self.instance, "delivery", None))
-        revision = attrs.get("revision", getattr(self.instance, "revision", None))
-        text = attrs.get("text", getattr(self.instance, "text", ""))
-        x = attrs.get("x", getattr(self.instance, "x", None))
-        y = attrs.get("y", getattr(self.instance, "y", None))
+        image = attrs.get(
+            "image",
+            getattr(self.instance, "image", None),
+        )
+        delivery = attrs.get(
+            "delivery",
+            getattr(self.instance, "delivery", None),
+        )
+        revision = attrs.get(
+            "revision",
+            getattr(self.instance, "revision", None),
+        )
+        text = attrs.get(
+            "text",
+            getattr(self.instance, "text", ""),
+        )
+        x = attrs.get(
+            "x",
+            getattr(self.instance, "x", None),
+        )
+        y = attrs.get(
+            "y",
+            getattr(self.instance, "y", None),
+        )
+
+        if order is not None:
+            if image is not None and image.order_id != order.id:
+                raise serializers.ValidationError(
+                    {"image": "Image must belong to the same order."}
+                )
+
+            if delivery is not None and delivery.order_id != order.id:
+                raise serializers.ValidationError(
+                    {"delivery": "Delivery must belong to the same order."}
+                )
+
+            if revision is not None and revision.order_id != order.id:
+                raise serializers.ValidationError(
+                    {"revision": "Revision must belong to the same order."}
+                )
 
         relation_map = {
             OrderComment.TargetType.ORDER: [],
@@ -275,9 +317,7 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         }
 
         if target_type not in relation_map:
-            raise serializers.ValidationError(
-                {"target_type": "Invalid target_type."}
-            )
+            raise serializers.ValidationError({"target_type": "Invalid target_type."})
 
         required_fields = relation_map[target_type]
         actual_relations = {
@@ -303,19 +343,13 @@ class OrderCommentSerializer(serializers.ModelSerializer):
                 )
 
         if (x is None) != (y is None):
-            raise serializers.ValidationError(
-                "Both x and y must be provided together."
-            )
+            raise serializers.ValidationError("Both x and y must be provided together.")
 
         if x is not None and not (0 <= x <= 100):
-            raise serializers.ValidationError(
-                {"x": "x must be between 0 and 100."}
-            )
+            raise serializers.ValidationError({"x": "x must be between 0 and 100."})
 
         if y is not None and not (0 <= y <= 100):
-            raise serializers.ValidationError(
-                {"y": "y must be between 0 and 100."}
-            )
+            raise serializers.ValidationError({"y": "y must be between 0 and 100."})
 
         if target_type == OrderComment.TargetType.ORDER and x is not None:
             raise serializers.ValidationError(

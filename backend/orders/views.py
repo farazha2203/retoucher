@@ -1502,7 +1502,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             data["revision"] = parent_comment.revision_id
 
         serializer = OrderCommentSerializer(
-            data=data,
+            data=request.data,
             context={
                 "request": request,
                 "order": order,
@@ -1640,7 +1640,15 @@ class OrderViewSet(viewsets.ModelViewSet):
                 },
             )
 
-            serializer = OrderCommentSerializer(comment)
+            serializer = OrderCommentSerializer(
+                comment,
+                data=request.data,
+                partial=True,
+                context={
+                    "request": request,
+                    "order": order,
+                },
+            )
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         if request.method == "DELETE":
