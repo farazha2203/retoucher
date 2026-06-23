@@ -316,6 +316,52 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = OrderCommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="start-revision",
+    )
+    def start_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if order.editor_id != request.user.id:
+            raise PermissionDenied("Only the assigned editor can start revision work.")
+
+        if order.status != Order.Status.REVISION_REQUIRED:
+            return Response(
+                {"detail": "Only orders requiring revision can be started for revision."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.status = Order.Status.IN_PROGRESS
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="start-revision",
+    )
+    def start_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if order.editor_id != request.user.id:
+            raise PermissionDenied("Only the assigned editor can start revision work.")
+
+        if order.status != Order.Status.REVISION_REQUIRED:
+            return Response(
+                {"detail": "Only orders requiring revision can be started for revision."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order.status = Order.Status.IN_PROGRESS
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
         detail=True,
