@@ -5,7 +5,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import filters
 from rest_framework.exceptions import ValidationError
@@ -69,6 +69,24 @@ class OrderViewSet(viewsets.ModelViewSet):
         "status",
     )
     ordering = ("-created_at",)
+
+    def _parse_positive_int_query_param(self, value, field_name, default):
+        if value in [None, ""]:
+            return default
+
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            raise ValidationError(
+                {field_name: "This query parameter must be a positive integer."}
+            )
+
+        if parsed_value <= 0:
+            raise ValidationError(
+                {field_name: "This query parameter must be a positive integer."}
+            )
+
+        return parsed_value
 
     def _parse_bool_query_param(self, value):
         if value is None:
@@ -274,6 +292,233 @@ class OrderViewSet(viewsets.ModelViewSet):
             to_status=new_status,
             note=note,
         )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="status-summary",
+    )
+    def status_summary(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        summary = (
+            queryset
+            .values("status")
+            .annotate(count=models.Count("id"))
+            .order_by("status")
+        )
+
+        return Response(list(summary), status=status.HTTP_200_OK)
+    
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="dashboard-summary",
+    )
+    def dashboard_summary(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        now = timezone.now()
+        due_soon_days = self._parse_positive_int_query_param(
+            request.query_params.get("due_soon_days"),
+            "due_soon_days",
+            default=7,
+        )
+        due_soon_until = now + timedelta(days=due_soon_days)
+
+        total_orders = queryset.count()
+
+        closed_orders = queryset.filter(status="closed").count()
+
+        open_orders = queryset.exclude(status="closed").count()
+
+        unassigned_orders = queryset.filter(editor__isnull=True).count()
+
+        overdue_orders = queryset.filter(
+            deadline__lt=now,
+        ).exclude(
+            status="closed",
+        ).count()
+
+        due_soon_orders = queryset.filter(
+            deadline__gte=now,
+            deadline__lte=due_soon_until,
+        ).exclude(
+            status="closed",
+        ).count()
+
+        settlement_pending_orders = queryset.filter(
+            status="settlement_pending",
+        ).count()
+
+        paid_orders = queryset.filter(
+            status="paid",
+        ).count()
+
+        return Response(
+            {
+                "total_orders": total_orders,
+                "open_orders": open_orders,
+                "closed_orders": closed_orders,
+                "unassigned_orders": unassigned_orders,
+                "overdue_orders": overdue_orders,
+                "due_soon_orders": due_soon_orders,
+                "due_soon_days": due_soon_days,
+                "settlement_pending_orders": settlement_pending_orders,
+                "paid_orders": paid_orders,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="deadline-summary",
+    )
+    def deadline_summary(self, request):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        now = timezone.now()
+
+        today_start = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time.min),
+            timezone.get_current_timezone(),
+        )
+        today_end = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time.max),
+            timezone.get_current_timezone(),
+        )
+
+        next_3_days = now + timedelta(days=3)
+        next_7_days = now + timedelta(days=7)
+
+        active_queryset = queryset.exclude(status="closed")
+
+        overdue = active_queryset.filter(deadline__lt=now).count()
+
+        due_today = active_queryset.filter(
+            deadline__gte=today_start,
+            deadline__lte=today_end,
+        ).count()
+
+        due_next_3_days = active_queryset.filter(
+            deadline__gte=now,
+            deadline__lte=next_3_days,
+        ).count()
+
+        due_next_7_days = active_queryset.filter(
+            deadline__gte=now,
+            deadline__lte=next_7_days,
+        ).count()
+
+        return Response(
+            {
+                "overdue": overdue,
+                "due_today": due_today,
+                "due_next_3_days": due_next_3_days,
+                "due_next_7_days": due_next_7_days,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="settlement-summary",
+    )
+    def settlement_summary(self, request):
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can view settlement summary.")
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        completed_orders = queryset.filter(status="completed").count()
+        settlement_pending_orders = queryset.filter(status="settlement_pending").count()
+        paid_orders = queryset.filter(status="paid").count()
+        closed_orders = queryset.filter(status="closed").count()
+
+        settlement_pipeline_total = queryset.filter(
+            status__in=[
+                "completed",
+                "settlement_pending",
+                "paid",
+                "closed",
+            ],
+        ).count()
+
+        return Response(
+            {
+                "completed_orders": completed_orders,
+                "settlement_pending_orders": settlement_pending_orders,
+                "paid_orders": paid_orders,
+                "closed_orders": closed_orders,
+                "settlement_pipeline_total": settlement_pipeline_total,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="editor-workload",
+    )
+    def editor_workload(self, request):
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can view editor workload.")
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        workload = (
+            queryset
+            .filter(editor__isnull=False)
+            .values(
+                "editor_id",
+                "editor__username",
+            )
+            .annotate(
+                total_orders=models.Count("id"),
+                active_orders=models.Count(
+                    "id",
+                    filter=~models.Q(status="closed"),
+                ),
+                closed_orders=models.Count(
+                    "id",
+                    filter=models.Q(status="closed"),
+                ),
+                delivered_orders=models.Count(
+                    "id",
+                    filter=models.Q(status="delivered"),
+                ),
+                in_progress_orders=models.Count(
+                    "id",
+                    filter=models.Q(status="in_progress"),
+                ),
+                revision_required_orders=models.Count(
+                    "id",
+                    filter=models.Q(status="revision_required"),
+                ),
+            )
+            .order_by("editor__username")
+        )
+
+        results = [
+            {
+                "editor": item["editor_id"],
+                "editor_username": item["editor__username"],
+                "total_orders": item["total_orders"],
+                "active_orders": item["active_orders"],
+                "closed_orders": item["closed_orders"],
+                "delivered_orders": item["delivered_orders"],
+                "in_progress_orders": item["in_progress_orders"],
+                "revision_required_orders": item["revision_required_orders"],
+            }
+            for item in workload
+        ]
+
+        return Response(results, status=status.HTTP_200_OK)
+    
+    
+    
 
     @action(
         detail=True,
