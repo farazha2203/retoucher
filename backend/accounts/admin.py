@@ -7,37 +7,36 @@ from .models import User
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
     list_display = (
+        "id",
         "username",
         "email",
         "role",
-        "phone_number",
-        "is_verified",
         "is_staff",
+        "is_superuser",
         "is_active",
         "date_joined",
     )
     list_filter = (
         "role",
-        "is_verified",
         "is_staff",
+        "is_superuser",
         "is_active",
+        "date_joined",
     )
     search_fields = (
         "username",
         "email",
-        "phone_number",
+        "first_name",
+        "last_name",
     )
-    ordering = ("-date_joined",)
+    ordering = ("id",)
 
     fieldsets = UserAdmin.fieldsets + (
         (
-            "Retoucher Profile",
+            "Retoucher Role",
             {
                 "fields": (
                     "role",
-                    "phone_number",
-                    "avatar",
-                    "is_verified",
                 )
             },
         ),
@@ -45,12 +44,10 @@ class CustomUserAdmin(UserAdmin):
 
     add_fieldsets = UserAdmin.add_fieldsets + (
         (
-            "Retoucher Profile",
+            "Retoucher Role",
             {
                 "fields": (
                     "role",
-                    "phone_number",
-                    "is_verified",
                 )
             },
         ),

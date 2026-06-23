@@ -6,6 +6,7 @@ from .models import (
     OrderComment,
     OrderDelivery,
     OrderImage,
+    OrderNotification,
     OrderRating,
     OrderRevision,
     OrderStatusHistory,
@@ -15,6 +16,7 @@ from .models import (
 class OrderImageInline(admin.TabularInline):
     model = OrderImage
     extra = 0
+    readonly_fields = ("uploaded_at",)
 
 
 @admin.register(Order)
@@ -44,6 +46,19 @@ class OrderAdmin(admin.ModelAdmin):
     )
     ordering = ("-created_at",)
     inlines = (OrderImageInline,)
+    list_select_related = (
+        "client",
+        "editor",
+    )
+    raw_id_fields = (
+        "client",
+        "editor",
+    )
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "revision_count",
+    )
 
 
 @admin.register(OrderDelivery)
@@ -60,6 +75,16 @@ class OrderDeliveryAdmin(admin.ModelAdmin):
         "uploaded_by__email",
     )
     list_filter = ("uploaded_at",)
+    list_select_related = (
+        "order",
+        "uploaded_by",
+    )
+    raw_id_fields = (
+        "order",
+        "uploaded_by",
+    )
+    readonly_fields = ("uploaded_at",)
+
 
 @admin.register(OrderRevision)
 class OrderRevisionAdmin(admin.ModelAdmin):
@@ -80,6 +105,18 @@ class OrderRevisionAdmin(admin.ModelAdmin):
         "source",
         "created_at",
     )
+    list_select_related = (
+        "order",
+        "requested_by",
+    )
+    raw_id_fields = (
+        "order",
+        "requested_by",
+    )
+    readonly_fields = (
+        "created_at",
+    )
+
 
 @admin.register(OrderRating)
 class OrderRatingAdmin(admin.ModelAdmin):
@@ -104,6 +141,19 @@ class OrderRatingAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+    list_select_related = (
+        "order",
+        "rated_by",
+    )
+    raw_id_fields = (
+        "order",
+        "rated_by",
+    )
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+    )
+
 
 @admin.register(OrderImage)
 class OrderImageAdmin(admin.ModelAdmin):
@@ -117,6 +167,10 @@ class OrderImageAdmin(admin.ModelAdmin):
         "order__title",
         "order__client__username",
     )
+    list_select_related = ("order",)
+    raw_id_fields = ("order",)
+    readonly_fields = ("uploaded_at",)
+
 
 @admin.register(OrderComment)
 class OrderCommentAdmin(admin.ModelAdmin):
@@ -142,6 +196,28 @@ class OrderCommentAdmin(admin.ModelAdmin):
         "is_edited",
         "created_at",
     )
+    list_select_related = (
+        "order",
+        "sender",
+    )
+    raw_id_fields = (
+        "order",
+        "sender",
+        "parent",
+        "image",
+        "delivery",
+        "revision",
+        "resolved_by",
+    )
+    readonly_fields = (
+        "is_edited",
+        "edited_at",
+        "deleted_at",
+        "created_at",
+        "updated_at",
+        "resolved_at",
+    )
+
 
 @admin.register(OrderStatusHistory)
 class OrderStatusHistoryAdmin(admin.ModelAdmin):
@@ -164,6 +240,18 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
         "to_status",
         "created_at",
     )
+    list_select_related = (
+        "order",
+        "changed_by",
+    )
+    raw_id_fields = (
+        "order",
+        "changed_by",
+    )
+    readonly_fields = (
+        "created_at",
+    )
+
 
 @admin.register(OrderActivityLog)
 class OrderActivityLogAdmin(admin.ModelAdmin):
@@ -182,5 +270,59 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
     )
     list_filter = (
         "activity_type",
+        "created_at",
+    )
+    list_select_related = (
+        "order",
+        "actor",
+    )
+    raw_id_fields = (
+        "order",
+        "actor",
+    )
+    readonly_fields = (
+        "created_at",
+    )
+
+
+@admin.register(OrderNotification)
+class OrderNotificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "recipient",
+        "actor",
+        "notification_type",
+        "is_read",
+        "created_at",
+        "read_at",
+    )
+    search_fields = (
+        "order__title",
+        "recipient__username",
+        "recipient__email",
+        "actor__username",
+        "actor__email",
+        "title",
+        "message",
+    )
+    list_filter = (
+        "notification_type",
+        "created_at",
+        "read_at",
+    )
+    list_select_related = (
+        "order",
+        "recipient",
+        "actor",
+        "activity_log",
+    )
+    raw_id_fields = (
+        "order",
+        "recipient",
+        "actor",
+        "activity_log",
+    )
+    readonly_fields = (
         "created_at",
     )
