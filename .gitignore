@@ -71,3 +71,12 @@ test-images/
 # Uploaded media files
 media/
 backend/media/
+
+
+.env
+*.env
+!.env.example
+
+media/
+staticfiles/
+schema.yml
