@@ -11,6 +11,8 @@ from .serializers import (
     ProjectRequestImageCreateSerializer,
     ProjectRequestImageSerializer,
     ProjectRequestListSerializer,
+    PublicProposalCreateSerializer,
+    SelectProjectProposalSerializer,
 )
 
 
@@ -48,7 +50,13 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
 
             if editor_profile:
                 queryset = queryset.filter(
-                    models.Q(client=user) | models.Q(target_editor=editor_profile)
+                    models.Q(client=user)
+                    | models.Q(target_editor=editor_profile)
+                    | models.Q(
+                        request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+                        status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+                        edit_style__in=editor_profile.skills.all(),
+                    )
                 )
             else:
                 queryset = queryset.filter(client=user)
@@ -78,6 +86,10 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             return DirectEditorDeclineSerializer
         if self.action == "retrieve":
             return ProjectRequestDetailSerializer
+        if self.action == "public_proposal":
+            return PublicProposalCreateSerializer
+        if self.action == "select_proposal":
+            return SelectProjectProposalSerializer
         return ProjectRequestListSerializer
 
     def perform_create(self, serializer):
@@ -184,3 +196,79 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
+    
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="public-proposal",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def public_proposal(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can submit public proposals."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path=r"proposals/(?P<proposal_id>[^/.]+)/select",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def select_proposal(self, request, pk=None, proposal_id=None):
+        project_request = self.get_object()
+
+        try:
+            proposal = project_request.proposals.get(id=proposal_id)
+        except Exception:
+            return response.Response(
+                {"detail": "Proposal not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "proposal": proposal,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        selected_proposal = serializer.save()
+
+        output_serializer = ProjectProposalSerializer(
+            selected_proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+    

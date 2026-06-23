@@ -361,3 +361,166 @@ class ProjectRequestAPITests(TestCase):
 
         project_request.refresh_from_db()
         self.assertEqual(project_request.status, ProjectRequest.Status.CANCELLED)
+
+
+    def test_editor_can_list_matching_public_quote_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public quote request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.get("/api/projects/requests/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], project_request.id)
+
+    def test_editor_can_submit_public_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public quote request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "proposed_price": 300000,
+                "editor_fee": 220000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I can do this with natural skin texture.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+        proposal = ProjectProposal.objects.first()
+        self.assertEqual(proposal.proposed_price, 300000)
+        self.assertEqual(proposal.status, ProjectProposal.Status.SUBMITTED)
+
+    def test_editor_cannot_submit_duplicate_public_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public quote request",
+            edit_style=self.style,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "Duplicate proposal.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+    def test_client_can_select_public_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public quote request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {
+                "client_note": "I choose this editor.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+        project_request.refresh_from_db()
+
+        self.assertEqual(proposal.status, ProjectProposal.Status.ACCEPTED_BY_CLIENT)
+        self.assertEqual(project_request.status, ProjectRequest.Status.EDITOR_SELECTED)
+        self.assertEqual(project_request.target_editor, self.editor_profile)
+
+    def test_selecting_one_public_proposal_rejects_others(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="other_public_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Other Public Editor",
+            is_available=True,
+            accepts_public_requests=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public quote request",
+            edit_style=self.style,
+        )
+
+        selected = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+        rejected = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=other_editor_profile,
+            proposed_price=280000,
+            editor_fee=200000,
+            estimated_delivery_hours=36,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{selected.id}/select/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        selected.refresh_from_db()
+        rejected.refresh_from_db()
+
+        self.assertEqual(selected.status, ProjectProposal.Status.ACCEPTED_BY_CLIENT)
+        self.assertEqual(rejected.status, ProjectProposal.Status.REJECTED_BY_CLIENT)
