@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import EditorProfile
 from catalog.models import EditCategory, EditPackage, EditStyle
-from .models import ProjectRequest
+from .models import ProjectProposal, ProjectRequest
 
 
 class ProjectRequestAPITests(TestCase):
@@ -128,7 +128,9 @@ class ProjectRequestAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         project_request = ProjectRequest.objects.first()
-        self.assertEqual(project_request.status, ProjectRequest.Status.WAITING_FOR_EDITOR)
+        self.assertEqual(
+            project_request.status, ProjectRequest.Status.WAITING_FOR_EDITOR
+        )
         self.assertEqual(project_request.target_editor, self.editor_profile)
 
     def test_public_quote_request_opens_for_quotes(self):
@@ -249,3 +251,113 @@ class ProjectRequestAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("package", response.data)
+
+    def test_target_editor_can_list_direct_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.get("/api/projects/requests/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], project_request.id)
+
+    def test_target_editor_can_submit_direct_proposal(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I can do a natural beauty retouch.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+        project_request.refresh_from_db()
+        self.assertEqual(project_request.status, ProjectRequest.Status.EDITOR_SELECTED)
+
+    def test_non_target_editor_cannot_submit_direct_proposal(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="other_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Other Editor",
+            is_available=True,
+            accepts_direct_requests=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=other_editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I want this job.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(ProjectProposal.objects.count(), 0)
+
+    def test_target_editor_can_decline_direct_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-decline/",
+            {
+                "editor_note": "I am not available for this deadline.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+        proposal = ProjectProposal.objects.first()
+        self.assertEqual(proposal.status, ProjectProposal.Status.DECLINED_BY_EDITOR)
+
+        project_request.refresh_from_db()
+        self.assertEqual(project_request.status, ProjectRequest.Status.CANCELLED)

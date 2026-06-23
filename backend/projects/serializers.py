@@ -4,7 +4,7 @@ from rest_framework import serializers
 from accounts.serializers_editor import EditorProfileListSerializer
 from catalog.serializers import EditPackageSerializer, EditStyleSerializer
 
-from .models import ProjectRequest, ProjectRequestImage
+from .models import ProjectProposal, ProjectRequest, ProjectRequestImage
 
 
 class ProjectRequestImageSerializer(serializers.ModelSerializer):
@@ -19,6 +19,43 @@ class ProjectRequestImageSerializer(serializers.ModelSerializer):
             "uploaded_at",
         ]
         read_only_fields = ["id", "uploaded_at"]
+
+class ProjectProposalSerializer(serializers.ModelSerializer):
+    editor_username = serializers.CharField(source="editor.user.username", read_only=True)
+    editor_display_name = serializers.CharField(source="editor.display_name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = ProjectProposal
+        fields = [
+            "id",
+            "project_request",
+            "editor",
+            "editor_username",
+            "editor_display_name",
+            "status",
+            "status_display",
+            "proposed_price",
+            "editor_fee",
+            "estimated_delivery_hours",
+            "editor_note",
+            "client_note",
+            "submitted_at",
+            "updated_at",
+            "accepted_at",
+        ]
+        read_only_fields = [
+            "id",
+            "project_request",
+            "editor",
+            "editor_username",
+            "editor_display_name",
+            "status",
+            "status_display",
+            "submitted_at",
+            "updated_at",
+            "accepted_at",
+        ]
 
 
 class ProjectRequestListSerializer(serializers.ModelSerializer):
@@ -65,6 +102,7 @@ class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
     package_detail = EditPackageSerializer(source="package", read_only=True)
     target_editor_detail = EditorProfileListSerializer(source="target_editor", read_only=True)
     images = ProjectRequestImageSerializer(many=True, read_only=True)
+    proposals = ProjectProposalSerializer(many=True, read_only=True)
 
     class Meta(ProjectRequestListSerializer.Meta):
         fields = ProjectRequestListSerializer.Meta.fields + [
@@ -78,6 +116,7 @@ class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
             "package_detail",
             "target_editor_detail",
             "images",
+            "proposals", 
         ]
         read_only_fields = ProjectRequestListSerializer.Meta.read_only_fields + [
             "support_note",
@@ -211,3 +250,119 @@ class ProjectRequestImageCreateSerializer(serializers.ModelSerializer):
         )
 
         return image
+    
+class DirectEditorProposalCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectProposal
+        fields = [
+            "id",
+            "proposed_price",
+            "editor_fee",
+            "estimated_delivery_hours",
+            "editor_note",
+        ]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+
+        if project_request.request_type != ProjectRequest.RequestType.DIRECT_EDITOR:
+            raise serializers.ValidationError(
+                "This action is only available for direct editor requests."
+            )
+
+        if project_request.status != ProjectRequest.Status.WAITING_FOR_EDITOR:
+            raise serializers.ValidationError(
+                "This project request is not waiting for editor response."
+            )
+
+        if project_request.target_editor_id != editor_profile.id:
+            raise serializers.ValidationError(
+                "You are not the target editor for this request."
+            )
+
+        if ProjectProposal.objects.filter(
+            project_request=project_request,
+            editor=editor_profile,
+        ).exists():
+            raise serializers.ValidationError(
+                "You have already responded to this project request."
+            )
+
+        proposed_price = attrs.get("proposed_price", 0)
+        if proposed_price <= 0:
+            raise serializers.ValidationError(
+                {"proposed_price": "Proposed price must be greater than zero."}
+            )
+
+        estimated_delivery_hours = attrs.get("estimated_delivery_hours", 0)
+        if estimated_delivery_hours <= 0:
+            raise serializers.ValidationError(
+                {"estimated_delivery_hours": "Estimated delivery hours must be greater than zero."}
+            )
+
+        return attrs
+
+    def create(self, validated_data):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            **validated_data,
+        )
+
+        project_request.status = ProjectRequest.Status.EDITOR_SELECTED
+        project_request.save(update_fields=["status", "updated_at"])
+
+        return proposal
+
+
+class DirectEditorDeclineSerializer(serializers.Serializer):
+    editor_note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+
+        if project_request.request_type != ProjectRequest.RequestType.DIRECT_EDITOR:
+            raise serializers.ValidationError(
+                "This action is only available for direct editor requests."
+            )
+
+        if project_request.status != ProjectRequest.Status.WAITING_FOR_EDITOR:
+            raise serializers.ValidationError(
+                "This project request is not waiting for editor response."
+            )
+
+        if project_request.target_editor_id != editor_profile.id:
+            raise serializers.ValidationError(
+                "You are not the target editor for this request."
+            )
+
+        return attrs
+
+    def save(self, **kwargs):
+        project_request = self.context["project_request"]
+        editor_profile = self.context["editor_profile"]
+        editor_note = self.validated_data.get("editor_note", "")
+
+        proposal, _ = ProjectProposal.objects.update_or_create(
+            project_request=project_request,
+            editor=editor_profile,
+            defaults={
+                "status": ProjectProposal.Status.DECLINED_BY_EDITOR,
+                "proposed_price": 0,
+                "editor_fee": 0,
+                "estimated_delivery_hours": 0,
+                "editor_note": editor_note,
+            },
+        )
+
+        project_request.status = ProjectRequest.Status.CANCELLED
+        project_request.save(update_fields=["status", "updated_at"])
+
+        return proposal

@@ -121,3 +121,56 @@ class ProjectRequestImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.project_request_id}"
+    
+class ProjectProposal(models.Model):
+    class Status(models.TextChoices):
+        SUBMITTED = "submitted", "Submitted"
+        ACCEPTED_BY_CLIENT = "accepted_by_client", "Accepted by client"
+        DECLINED_BY_EDITOR = "declined_by_editor", "Declined by editor"
+        REJECTED_BY_CLIENT = "rejected_by_client", "Rejected by client"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    project_request = models.ForeignKey(
+        ProjectRequest,
+        on_delete=models.CASCADE,
+        related_name="proposals",
+    )
+    editor = models.ForeignKey(
+        EditorProfile,
+        on_delete=models.CASCADE,
+        related_name="project_proposals",
+    )
+
+    status = models.CharField(
+        max_length=30,
+        choices=Status.choices,
+        default=Status.SUBMITTED,
+    )
+
+    proposed_price = models.PositiveIntegerField(default=0)
+    editor_fee = models.PositiveIntegerField(
+        default=0,
+        help_text="Internal editor fee or requested wage.",
+    )
+    estimated_delivery_hours = models.PositiveIntegerField(default=24)
+
+    editor_note = models.TextField(blank=True)
+    client_note = models.TextField(blank=True)
+
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project_request", "editor"],
+                name="unique_project_proposal_per_editor",
+            )
+        ]
+        verbose_name = "Project proposal"
+        verbose_name_plural = "Project proposals"
+
+    def __str__(self):
+        return f"{self.project_request_id} - {self.editor}"
