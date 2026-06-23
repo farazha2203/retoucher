@@ -57,6 +57,12 @@ class OrderRevisionSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    def validate_note(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Revision note cannot be empty.")
+        return value
+
     class Meta:
         model = OrderRevision
         fields = (
@@ -81,6 +87,14 @@ class OrderRatingSerializer(serializers.ModelSerializer):
         source="rated_by.username",
         read_only=True,
     )
+
+    def validate_score(self, value):
+        if not (1 <= value <= 10):
+            raise serializers.ValidationError("Score must be between 1 and 10.")
+        return value
+
+    def validate_comment(self, value):
+        return (value or "").strip()
 
     class Meta:
         model = OrderRating
@@ -113,6 +127,62 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         source="sender.username",
         read_only=True,
     )
+
+    def validate(self, attrs):
+        target_type = attrs.get("target_type", getattr(self.instance, "target_type", None))
+        image = attrs.get("image", getattr(self.instance, "image", None))
+        delivery = attrs.get("delivery", getattr(self.instance, "delivery", None))
+        revision = attrs.get("revision", getattr(self.instance, "revision", None))
+        text = attrs.get("text", getattr(self.instance, "text", ""))
+        x = attrs.get("x", getattr(self.instance, "x", None))
+        y = attrs.get("y", getattr(self.instance, "y", None))
+
+        relation_map = {
+            "order": [],
+            "image": ["image"],
+            "delivery": ["delivery"],
+            "revision": ["revision"],
+        }
+
+        required_fields = relation_map.get(target_type, [])
+        actual_relations = {
+            "image": image,
+            "delivery": delivery,
+            "revision": revision,
+        }
+
+        for field_name in required_fields:
+            if actual_relations[field_name] is None:
+                raise serializers.ValidationError(
+                    {field_name: f"This field is required when target_type is '{target_type}'."}
+                )
+
+        for field_name, value in actual_relations.items():
+            if field_name not in required_fields and value is not None:
+                raise serializers.ValidationError(
+                    {field_name: f"This field must be empty when target_type is '{target_type}'."}
+                )
+
+        if (x is None) != (y is None):
+            raise serializers.ValidationError("Both x and y must be provided together.")
+
+        if x is not None and not (0 <= x <= 100):
+            raise serializers.ValidationError({"x": "x must be between 0 and 100."})
+
+        if y is not None and not (0 <= y <= 100):
+            raise serializers.ValidationError({"y": "y must be between 0 and 100."})
+
+        if target_type == "order" and x is not None:
+            raise serializers.ValidationError(
+                "Coordinates are only allowed for image, delivery, or revision comments."
+            )
+
+        if not (text or "").strip() and x is None and y is None:
+            raise serializers.ValidationError(
+                {"text": "Comment must have text or coordinate annotation."}
+            )
+
+        return attrs
 
     class Meta:
         model = OrderComment
