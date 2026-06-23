@@ -1,8 +1,6 @@
 from django.contrib import admin
 
-from .models import Order, OrderDelivery, OrderImage
-
-
+from .models import Order, OrderDelivery, OrderImage, OrderRating, OrderRevision
 
 
 class OrderImageInline(admin.TabularInline):
@@ -16,14 +14,16 @@ class OrderAdmin(admin.ModelAdmin):
         "id",
         "title",
         "client",
+        "editor",
         "status",
+        "revision_count",
         "deadline",
         "created_at",
-        "editor",
     )
     list_filter = (
         "status",
         "created_at",
+        "deadline",
     )
     search_fields = (
         "title",
@@ -35,6 +35,7 @@ class OrderAdmin(admin.ModelAdmin):
     )
     ordering = ("-created_at",)
     inlines = (OrderImageInline,)
+
 
 @admin.register(OrderDelivery)
 class OrderDeliveryAdmin(admin.ModelAdmin):
@@ -49,8 +50,48 @@ class OrderDeliveryAdmin(admin.ModelAdmin):
         "uploaded_by__username",
         "uploaded_by__email",
     )
+    list_filter = ("uploaded_at",)
+
+@admin.register(OrderRevision)
+class OrderRevisionAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "source",
+        "requested_by",
+        "created_at",
+    )
+    search_fields = (
+        "order__title",
+        "requested_by__username",
+        "requested_by__email",
+        "note",
+    )
     list_filter = (
-        "uploaded_at",
+        "source",
+        "created_at",
+    )
+
+@admin.register(OrderRating)
+class OrderRatingAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "source",
+        "rated_by",
+        "score",
+        "created_at",
+    )
+    search_fields = (
+        "order__title",
+        "rated_by__username",
+        "rated_by__email",
+        "comment",
+    )
+    list_filter = (
+        "source",
+        "score",
+        "created_at",
     )
 
 @admin.register(OrderImage)

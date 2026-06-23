@@ -4,9 +4,16 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from .models import Order
+from django.utils import timezone
+from .models import Order, OrderImage, OrderRating, OrderRevision
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
-from .serializers import OrderDeliverySerializer, OrderImageSerializer, OrderSerializer
+from .serializers import (
+    OrderDeliverySerializer,
+    OrderImageSerializer,
+    OrderRatingSerializer,
+    OrderRevisionSerializer,
+    OrderSerializer,
+)
 
 User = get_user_model()
 
@@ -60,8 +67,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST,
         )
-
-
 
     @action(
         detail=True,
@@ -162,6 +167,89 @@ class OrderViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         raise PermissionDenied("Deleting orders is not allowed.")
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="supervisor-approve",
+    )
+    def supervisor_approve(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can approve delivered orders.")
+
+        if order.status != Order.Status.DELIVERED:
+            return Response(
+                {"detail": "Only delivered orders can be approved by supervisor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = OrderRatingSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(
+                order=order,
+                rated_by=request.user,
+                source=OrderRating.Source.SUPERVISOR,
+            )
+
+            order.supervisor_approved_at = timezone.now()
+            order.status = Order.Status.CLIENT_REVIEW
+            order.save(
+                update_fields=[
+                    "supervisor_approved_at",
+                    "status",
+                    "updated_at",
+                ]
+            )
+
+            order_serializer = self.get_serializer(order)
+            return Response(order_serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="supervisor-request-revision",
+    )
+    def supervisor_request_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can request revisions.")
+
+        if order.status != Order.Status.DELIVERED:
+            return Response(
+                {"detail": "Only delivered orders can have supervisor revision requests."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = OrderRevisionSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save(
+                order=order,
+                requested_by=request.user,
+                source=OrderRevision.Source.SUPERVISOR,
+            )
+
+            order.revision_count += 1
+            order.status = Order.Status.REVISION_REQUIRED
+            order.save(
+                update_fields=[
+                    "revision_count",
+                    "status",
+                    "updated_at",
+                ]
+            )
+
+            order_serializer = self.get_serializer(order)
+            return Response(order_serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    
     @action(
         detail=True,
         methods=["post"],
