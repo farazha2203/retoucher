@@ -1,17 +1,55 @@
+import os
 from pathlib import Path
 from datetime import timedelta
-from decouple import config, Csv
+
+from dotenv import load_dotenv
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = config(
-    "SECRET_KEY", default="django-insecure-retoucher-local-dev-secret-key"
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+
+    if value is None:
+        return default
+
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_int(name, default=0):
+    value = os.getenv(name)
+
+    if value is None or value == "":
+        return default
+
+    return int(value)
+
+
+def env_list(name, default=None):
+    value = os.getenv(name)
+
+    if value is None or value.strip() == "":
+        return default or []
+
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+# Base settings
+
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "local-dev-only-change-this-secret-key-in-env-file-please-123456789",
 )
 
-DEBUG = config("DEBUG", default=True, cast=bool)
+DEBUG = env_bool("DJANGO_DEBUG", default=True)
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="127.0.0.1,localhost", cast=Csv())
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    default=["127.0.0.1", "localhost"],
+)
 
 
 # Application definition
@@ -36,7 +74,6 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "accounts",
     "orders",
-    # Local apps will be added here later
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -79,11 +116,14 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="retoucher_db"),
-        "USER": config("DB_USER", default="retoucher_user"),
-        "PASSWORD": config("DB_PASSWORD", default="retoucher_pass"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
+        "NAME": os.getenv("POSTGRES_DB", os.getenv("DB_NAME", "retoucher_db")),
+        "USER": os.getenv("POSTGRES_USER", os.getenv("DB_USER", "retoucher_user")),
+        "PASSWORD": os.getenv(
+            "POSTGRES_PASSWORD",
+            os.getenv("DB_PASSWORD", "retoucher_pass"),
+        ),
+        "HOST": os.getenv("POSTGRES_HOST", os.getenv("DB_HOST", "localhost")),
+        "PORT": os.getenv("POSTGRES_PORT", os.getenv("DB_PORT", "5432")),
     }
 }
 
@@ -127,7 +167,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
 AUTH_USER_MODEL = "accounts.User"
+
 
 # Django REST Framework
 
@@ -158,12 +200,59 @@ SIMPLE_JWT = {
 }
 
 
-# CORS
+# CORS / CSRF
 
-CORS_ALLOWED_ORIGINS = config(
-    "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:3000,http://127.0.0.1:3000",
-    cast=Csv(),
+CORS_ALLOWED_ORIGINS = env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    default=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+)
+
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    default=[],
+)
+
+
+# Production security settings
+
+SECURE_SSL_REDIRECT = env_bool(
+    "DJANGO_SECURE_SSL_REDIRECT",
+    default=not DEBUG,
+)
+
+SESSION_COOKIE_SECURE = env_bool(
+    "DJANGO_SESSION_COOKIE_SECURE",
+    default=not DEBUG,
+)
+
+CSRF_COOKIE_SECURE = env_bool(
+    "DJANGO_CSRF_COOKIE_SECURE",
+    default=not DEBUG,
+)
+
+SECURE_HSTS_SECONDS = env_int(
+    "DJANGO_SECURE_HSTS_SECONDS",
+    default=31536000 if not DEBUG else 0,
+)
+
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    default=not DEBUG,
+)
+
+SECURE_HSTS_PRELOAD = env_bool(
+    "DJANGO_SECURE_HSTS_PRELOAD",
+    default=not DEBUG,
+)
+
+SECURE_PROXY_SSL_HEADER = (
+    "HTTP_X_FORWARDED_PROTO",
+    "https",
 )
 
 
@@ -195,7 +284,10 @@ This API manages the full photo retouching workflow:
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": r"/api/",
     "TAGS": [
-        {"name": "Orders", "description": "Order CRUD and main order workflow."},
+        {
+            "name": "Orders",
+            "description": "Order CRUD and main order workflow.",
+        },
         {
             "name": "Order Workflow",
             "description": "Submit, review, assignment, delivery, approval, settlement.",
