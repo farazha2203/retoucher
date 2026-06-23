@@ -6,17 +6,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 SECRET_KEY = config(
-    "SECRET_KEY",
-    default="django-insecure-retoucher-local-dev-secret-key"
+    "SECRET_KEY", default="django-insecure-retoucher-local-dev-secret-key"
 )
 
 DEBUG = config("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS",
-    default="127.0.0.1,localhost",
-    cast=Csv()
-)
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="127.0.0.1,localhost", cast=Csv())
 
 
 # Application definition
@@ -49,7 +44,6 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -169,7 +163,7 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
     default="http://localhost:3000,http://127.0.0.1:3000",
-    cast=Csv()
+    cast=Csv(),
 )
 
 
@@ -177,7 +171,50 @@ CORS_ALLOWED_ORIGINS = config(
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Retoucher API",
-    "DESCRIPTION": "API documentation for Retoucher freelance image editing platform.",
-    "VERSION": "1.0.0",
+    "DESCRIPTION": """
+Retoucher backend API.
+
+This API manages the full photo retouching workflow:
+
+- JWT authentication
+- Order creation and submission
+- Image upload
+- Editor assignment
+- Editor work and delivery
+- Supervisor review and QC
+- Client review and revision requests
+- Settlement and payment workflow
+- Order comments, threaded replies, rich annotations
+- Comment resolve/unresolve workflow
+- Activity logs
+- Notifications
+- Dashboard and summary endpoints
+""",
+    "VERSION": "1.0.0-phase1",
     "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": r"/api/",
+    "TAGS": [
+        {"name": "Orders", "description": "Order CRUD and main order workflow."},
+        {
+            "name": "Order Workflow",
+            "description": "Submit, review, assignment, delivery, approval, settlement.",
+        },
+        {
+            "name": "Order Comments",
+            "description": "Comments, replies, annotations, resolve/unresolve.",
+        },
+        {
+            "name": "Order Activity Logs",
+            "description": "Audit trail and order history.",
+        },
+        {
+            "name": "Order Notifications",
+            "description": "User notifications related to order activity.",
+        },
+        {
+            "name": "Order Dashboard",
+            "description": "Dashboard, workload, status and settlement summaries.",
+        },
+    ],
 }

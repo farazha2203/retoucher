@@ -12,6 +12,34 @@ from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
 
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiTypes,
+    extend_schema,
+)
+
+from .api_docs import (
+    AssignEditorRequestSerializer,
+    CommentCreateRequestSerializer,
+    CommentStatusRequestSerializer,
+    CommentUpdateRequestSerializer,
+    DashboardSummarySerializer,
+    DeadlineSummarySerializer,
+    DeliveryUploadRequestSerializer,
+    DetailResponseSerializer,
+    EditorWorkloadItemSerializer,
+    ImageUploadRequestSerializer,
+    MarkAllNotificationsReadResponseSerializer,
+    NoteRequestSerializer,
+    NotificationUnreadCountSerializer,
+    RatingRequestSerializer,
+    SettlementSummarySerializer,
+    StatusSummaryItemSerializer,
+)
+
+
 from .models import (
     Order,
     OrderActivityLog,
@@ -396,6 +424,22 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note,
         )
 
+    @extend_schema(
+        tags=["Order Dashboard"],
+        summary="Get order count grouped by status",
+        parameters=[
+            OpenApiParameter(
+                "client", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "editor", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "status", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={200: StatusSummaryItemSerializer(many=True)},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -411,8 +455,32 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
         return Response(list(summary), status=status.HTTP_200_OK)
-    
 
+    @extend_schema(
+        tags=["Order Notifications"],
+        summary="List current user's order notifications",
+        parameters=[
+            OpenApiParameter(
+                "unread", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "order", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "order_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "type", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "notification_type",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+        ],
+        responses={200: OrderNotificationSerializer(many=True)},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -420,8 +488,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     )
     def notifications(self, request):
         queryset = (
-            OrderNotification.objects
-            .select_related(
+            OrderNotification.objects.select_related(
                 "order",
                 "actor",
                 "recipient",
@@ -440,11 +507,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         if unread is False:
             queryset = queryset.filter(read_at__isnull=False)
 
-        order_id = request.query_params.get("order") or request.query_params.get("order_id")
+        order_id = request.query_params.get("order") or request.query_params.get(
+            "order_id"
+        )
         if order_id:
             queryset = queryset.filter(order_id=order_id)
 
-        notification_type = request.query_params.get("type") or request.query_params.get("notification_type")
+        notification_type = request.query_params.get(
+            "type"
+        ) or request.query_params.get("notification_type")
         if notification_type:
             queryset = queryset.filter(notification_type=notification_type)
 
@@ -463,8 +534,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 
+    @extend_schema(
+        tags=["Order Notifications"],
+        summary="Get unread notification count",
+        responses={200: NotificationUnreadCountSerializer},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -480,8 +555,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             {"unread_count": unread_count},
             status=status.HTTP_200_OK,
         )
-    
 
+    @extend_schema(
+        tags=["Order Notifications"],
+        summary="Mark notification as read",
+        responses={
+            200: OrderNotificationSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=False,
         methods=["post"],
@@ -508,8 +590,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 
+    @extend_schema(
+        tags=["Order Notifications"],
+        summary="Mark all current user's notifications as read",
+        responses={200: MarkAllNotificationsReadResponseSerializer},
+    )
     @action(
         detail=False,
         methods=["post"],
@@ -530,8 +616,13 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
 
+    @extend_schema(
+        tags=["Order Comments"],
+        summary="List order comments as threads",
+        description="Returns root comments with nested replies.",
+        responses={200: OrderCommentThreadSerializer(many=True)},
+    )
     @action(
         detail=True,
         methods=["get"],
@@ -565,6 +656,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Comments"],
+        summary="Resolve an order comment",
+        description="Marks a comment as resolved and stores resolver user and timestamp.",
+        responses={
+            200: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -617,6 +718,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Comments"],
+        summary="Unresolve an order comment",
+        description="Clears resolved_by and resolved_at fields.",
+        responses={
+            200: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -672,6 +783,29 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Dashboard"],
+        summary="Get order dashboard summary",
+        description="Returns high-level order counters for dashboard widgets.",
+        parameters=[
+            OpenApiParameter(
+                "client", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "editor", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "status", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "due_soon_days",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+        ],
+        responses={200: DashboardSummarySerializer},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -740,6 +874,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["Order Dashboard"],
+        summary="Get deadline summary",
+        parameters=[
+            OpenApiParameter(
+                "due_soon_days",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+        ],
+        responses={200: DeadlineSummarySerializer},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -791,6 +938,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["Order Dashboard"],
+        summary="Get settlement pipeline summary",
+        parameters=[
+            OpenApiParameter(
+                "client", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "editor", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={200: SettlementSummarySerializer},
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -827,6 +987,20 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @extend_schema(
+        tags=["Order Dashboard"],
+        summary="Get editor workload summary",
+        description="Staff-only endpoint. Returns order workload grouped by editor.",
+        parameters=[
+            OpenApiParameter(
+                "editor", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={
+            200: EditorWorkloadItemSerializer(many=True),
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=False,
         methods=["get"],
@@ -886,6 +1060,12 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(results, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Activity Logs"],
+        summary="List order activity log",
+        description="Returns audit trail for a specific order.",
+        responses={200: OrderActivityLogSerializer(many=True)},
+    )
     @action(
         detail=True,
         methods=["get"],
@@ -896,6 +1076,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = OrderActivityLogSerializer(order.activity_logs.all(), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Activity Logs"],
+        summary="List order status history",
+        responses={200: OrderStatusHistorySerializer(many=True)},
+    )
     @action(
         detail=True,
         methods=["get"],
@@ -906,6 +1091,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = OrderStatusHistorySerializer(order.status_history.all(), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Move completed order to settlement pending",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -948,6 +1142,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Mark settlement as paid",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -990,6 +1193,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Close paid order",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1032,6 +1244,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Supervisor rates order",
+        request=RatingRequestSerializer,
+        responses={
+            200: OrderRatingSerializer,
+            201: OrderRatingSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1058,6 +1281,17 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Client rates order",
+        request=RatingRequestSerializer,
+        responses={
+            200: OrderRatingSerializer,
+            201: OrderRatingSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1084,6 +1318,95 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        methods=["GET"],
+        tags=["Order Comments"],
+        summary="List order comments",
+        description="Returns flat list of comments for an order. Supports filters for resolved state, annotation, target type and target object.",
+        parameters=[
+            OpenApiParameter(
+                "resolved", OpenApiTypes.BOOL, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "has_annotation",
+                OpenApiTypes.BOOL,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "annotation_type",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "target_type", OpenApiTypes.STR, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "image", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "image_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "delivery", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "delivery_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "revision", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+            OpenApiParameter(
+                "revision_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={200: OrderCommentSerializer(many=True)},
+    )
+    @extend_schema(
+        methods=["POST"],
+        tags=["Order Comments"],
+        summary="Create order comment or reply",
+        description="Creates a root comment or a reply. Replies inherit target fields from their parent comment unless explicitly provided.",
+        request=CommentCreateRequestSerializer,
+        responses={
+            201: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+        },
+        examples=[
+            OpenApiExample(
+                "Root order comment",
+                value={
+                    "target_type": "order",
+                    "text": "Please review this order.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reply comment",
+                value={
+                    "parent": 7,
+                    "text": "This is a reply.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Point annotation",
+                value={
+                    "target_type": "delivery",
+                    "delivery": 1,
+                    "text": "Reduce smoothing here.",
+                    "x": 42.5,
+                    "y": 58.3,
+                    "annotation_type": "point",
+                    "annotation_label": "Skin smoothing",
+                    "annotation_color": "#ff0000",
+                    "annotation_data": {"priority": "high"},
+                },
+                request_only=True,
+            ),
+        ],
+    )
     @action(
         detail=True,
         methods=["get", "post"],
@@ -1221,6 +1544,36 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        methods=["GET"],
+        tags=["Order Comments"],
+        summary="Retrieve a single order comment",
+        responses={
+            200: OrderCommentSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
+    @extend_schema(
+        methods=["PATCH", "PUT"],
+        tags=["Order Comments"],
+        summary="Update an order comment",
+        request=CommentUpdateRequestSerializer,
+        responses={
+            200: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
+    @extend_schema(
+        methods=["DELETE"],
+        tags=["Order Comments"],
+        summary="Delete an order comment",
+        description="Soft-deletes or deletes a comment depending on project implementation.",
+        responses={
+            204: None,
+            404: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["patch", "delete"],
@@ -1332,6 +1685,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Editor uploads delivery file",
+        request=DeliveryUploadRequestSerializer,
+        responses={
+            201: OrderDeliverySerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1390,6 +1753,28 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    @extend_schema(
+        tags=["Order Comments"],
+        summary="Set order comment status",
+        request=CommentStatusRequestSerializer,
+        responses={
+            200: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+            404: DetailResponseSerializer,
+        },
+        examples=[
+            OpenApiExample(
+                "Approve comment",
+                value={"status": "approved"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reject comment",
+                value={"status": "rejected"},
+                request_only=True,
+            ),
+        ],
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1448,6 +1833,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = OrderCommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Editor starts revision work",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1484,6 +1878,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Client approves order",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1521,6 +1924,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Client requests revision",
+        request=NoteRequestSerializer,
+        responses={
+            201: OrderRevisionSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1572,6 +1985,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Supervisor accepts client revision request",
+        request=NoteRequestSerializer,
+        responses={
+            200: OrderRevisionSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1633,6 +2056,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Supervisor rejects client revision request",
+        request=NoteRequestSerializer,
+        responses={
+            200: OrderRevisionSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1694,6 +2127,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Editor starts work on assigned order",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1724,6 +2166,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Assign editor to order",
+        request=AssignEditorRequestSerializer,
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1819,6 +2272,16 @@ class OrderViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         raise PermissionDenied("Deleting orders is not allowed.")
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Supervisor approves delivered order",
+        request=RatingRequestSerializer,
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1880,6 +2343,16 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Supervisor requests revision from editor",
+        request=NoteRequestSerializer,
+        responses={
+            201: OrderRevisionSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1934,6 +2407,15 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Start supervisor review",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -1964,6 +2446,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Submit draft order",
+        responses={
+            200: OrderSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
@@ -2002,6 +2493,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        tags=["Order Workflow"],
+        summary="Upload original image for order",
+        request=ImageUploadRequestSerializer,
+        responses={
+            201: OrderImageSerializer,
+            400: DetailResponseSerializer,
+            403: DetailResponseSerializer,
+        },
+    )
     @action(
         detail=True,
         methods=["post"],
