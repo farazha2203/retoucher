@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 
 from .models import (
     Order,
@@ -416,8 +417,15 @@ class OrderCommentThreadSerializer(OrderCommentSerializer):
     class Meta(OrderCommentSerializer.Meta):
         fields = OrderCommentSerializer.Meta.fields + ("replies",)
 
-    def get_replies(self, obj):
-        replies = obj.replies.all().order_by("created_at")
+    @extend_schema_field(serializers.ListField(child=serializers.DictField()))
+    def get_replies(self, obj) -> list:
+        replies = obj.replies.all()
+
+        replies = sorted(
+            replies,
+            key=lambda reply: reply.created_at,
+        )
+
         return OrderCommentThreadSerializer(
             replies,
             many=True,
