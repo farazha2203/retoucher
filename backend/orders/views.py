@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from .models import (
     Order,
+    OrderActivityLog,
     OrderComment,
     OrderDelivery,
     OrderImage,
@@ -16,6 +17,7 @@ from .models import (
 )
 from .permissions import CanCreateOrder, IsOrderOwnerOrStaffRole
 from .serializers import (
+    OrderActivityLogSerializer,
     OrderCommentSerializer,
     OrderDeliverySerializer,
     OrderImageSerializer,
@@ -58,7 +60,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             score=serializer.validated_data["score"],
             comment=serializer.validated_data.get("comment", ""),
         )
-    
+
     def _log_status_change(self, order, user, from_status, to_status, note=""):
         OrderStatusHistory.objects.create(
             order=order,
@@ -68,7 +70,18 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note,
         )
 
-    def _update_order_status(self, order, new_status, user, note="", extra_updates=None):
+    def _log_activity(self, order, actor, activity_type, message="", metadata=None):
+        OrderActivityLog.objects.create(
+            order=order,
+            actor=actor,
+            activity_type=activity_type,
+            message=message,
+            metadata=metadata or {},
+        )
+
+    def _update_order_status(
+        self, order, new_status, user, note="", extra_updates=None
+    ):
         from_status = order.status
 
         order.status = new_status
@@ -91,13 +104,23 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["get"],
+        url_path="activity-log",
+    )
+    def activity_log(self, request, pk=None):
+        order = self.get_object()
+        serializer = OrderActivityLogSerializer(order.activity_logs.all(), many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["get"],
         url_path="status-history",
     )
     def status_history(self, request, pk=None):
         order = self.get_object()
         serializer = OrderStatusHistorySerializer(order.status_history.all(), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -127,9 +150,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
         )
 
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.SETTLEMENT_STARTED,
+            message="Settlement process started.",
+            metadata={
+                "note": note,
+            },
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -159,9 +192,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
         )
 
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.PAYMENT_RECORDED,
+            message="Order marked as paid.",
+            metadata={
+                "note": note,
+            },
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -188,6 +231,16 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note,
             extra_updates={
                 "closed_at": timezone.now(),
+            },
+        )
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.ORDER_CLOSED,
+            message="Order closed.",
+            metadata={
+                "note": note,
             },
         )
 
@@ -269,6 +322,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                 sender=request.user,
             )
 
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.COMMENT_CREATED,
+                message="Comment created.",
+                metadata={
+                    "comment_id": comment.id,
+                    "target_type": comment.target_type,
+                    "status": comment.status,
+                },
+            )
+
             output_serializer = OrderCommentSerializer(comment)
             return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -314,7 +379,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            comment.text = text
+            comment.text = str(text).strip()
             comment.is_edited = True
             comment.edited_at = timezone.now()
             comment.save(
@@ -324,6 +389,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "edited_at",
                     "updated_at",
                 ]
+            )
+
+            self._log_activity(
+                order=comment.order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.COMMENT_UPDATED,
+                message="Comment updated.",
+                metadata={
+                    "comment_id": comment.id,
+                    "target_type": comment.target_type,
+                    "status": comment.status,
+                },
             )
 
             serializer = OrderCommentSerializer(comment)
@@ -353,6 +430,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "deleted_at",
                     "updated_at",
                 ]
+            )
+
+            self._log_activity(
+                order=comment.order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.COMMENT_DELETED,
+                message="Comment deleted.",
+                metadata={
+                    "comment_id": comment.id,
+                    "target_type": comment.target_type,
+                    "status": comment.status,
+                },
             )
 
             return Response(status=status.HTTP_204_NO_CONTENT)
@@ -393,6 +482,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 note=serializer.validated_data.get("note", "Editor delivered files."),
             )
 
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.DELIVERY_UPLOADED,
+                message="Editor uploaded delivery files.",
+                metadata={
+                    "delivery_id": delivery.id,
+                    "note": delivery.note,
+                },
+            )
+
             order_serializer = self.get_serializer(order)
             return Response(
                 order_serializer.data,
@@ -403,7 +503,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST,
         )
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -420,8 +520,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if comment.sender_id != request.user.id and not self._is_staff_role(request.user):
-            raise PermissionDenied("Only the sender or staff can change comment status.")
+        if comment.sender_id != request.user.id and not self._is_staff_role(
+            request.user
+        ):
+            raise PermissionDenied(
+                "Only the sender or staff can change comment status."
+            )
 
         new_status = request.data.get("status")
 
@@ -457,7 +561,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         serializer = OrderCommentSerializer(comment)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -471,7 +575,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if order.status != Order.Status.REVISION_REQUIRED:
             return Response(
-                {"detail": "Only orders requiring revision can be started for revision."},
+                {
+                    "detail": "Only orders requiring revision can be started for revision."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -482,32 +588,16 @@ class OrderViewSet(viewsets.ModelViewSet):
             note="Editor started revision work.",
         )
 
-        serializer = self.get_serializer(order)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="start-revision",
-    )
-    def start_revision(self, request, pk=None):
-        order = self.get_object()
-
-        if order.editor_id != request.user.id:
-            raise PermissionDenied("Only the assigned editor can start revision work.")
-
-        if order.status != Order.Status.REVISION_REQUIRED:
-            return Response(
-                {"detail": "Only orders requiring revision can be started for revision."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        order.status = Order.Status.IN_PROGRESS
-        order.save(update_fields=["status", "updated_at"])
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.EDITOR_REVISION_STARTED,
+            message="Editor started revision work.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -535,9 +625,16 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
         )
 
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.CLIENT_APPROVED,
+            message="Client approved the order.",
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -551,7 +648,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if order.status != Order.Status.CLIENT_REVIEW:
             return Response(
-                {"detail": "Only orders in client review can receive client revision requests."},
+                {
+                    "detail": "Only orders in client review can receive client revision requests."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -571,11 +670,22 @@ class OrderViewSet(viewsets.ModelViewSet):
                 note=serializer.validated_data["note"],
             )
 
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.CLIENT_REVISION_REQUESTED,
+                message="Client requested revision.",
+                metadata={
+                    "revision_id": revision.id,
+                    "note": revision.note,
+                },
+            )
+
             order_serializer = self.get_serializer(order)
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -585,17 +695,23 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
 
         if not self._is_staff_role(request.user):
-            raise PermissionDenied("Only staff roles can accept client revision requests.")
+            raise PermissionDenied(
+                "Only staff roles can accept client revision requests."
+            )
 
         if order.status != Order.Status.CLIENT_REVISION_REQUESTED:
             return Response(
-                {"detail": "Only client revision requested orders can be accepted by supervisor."},
+                {
+                    "detail": "Only client revision requested orders can be accepted by supervisor."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        latest_client_revision = order.revisions.filter(
-            source=OrderRevision.Source.CLIENT
-        ).order_by("-created_at").first()
+        latest_client_revision = (
+            order.revisions.filter(source=OrderRevision.Source.CLIENT)
+            .order_by("-created_at")
+            .first()
+        )
 
         note = request.data.get("note", "").strip()
 
@@ -615,9 +731,22 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note or "Supervisor accepted client revision request.",
         )
 
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.SUPERVISOR_ACCEPTED_CLIENT_REVISION,
+            message="Supervisor accepted client revision request.",
+            metadata={
+                "note": note,
+                "revision_id": (
+                    latest_client_revision.id if latest_client_revision else None
+                ),
+            },
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -627,17 +756,23 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
 
         if not self._is_staff_role(request.user):
-            raise PermissionDenied("Only staff roles can reject client revision requests.")
+            raise PermissionDenied(
+                "Only staff roles can reject client revision requests."
+            )
 
         if order.status != Order.Status.CLIENT_REVISION_REQUESTED:
             return Response(
-                {"detail": "Only client revision requested orders can be rejected by supervisor."},
+                {
+                    "detail": "Only client revision requested orders can be rejected by supervisor."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        latest_client_revision = order.revisions.filter(
-            source=OrderRevision.Source.CLIENT
-        ).order_by("-created_at").first()
+        latest_client_revision = (
+            order.revisions.filter(source=OrderRevision.Source.CLIENT)
+            .order_by("-created_at")
+            .first()
+        )
 
         note = request.data.get("note", "").strip()
 
@@ -657,9 +792,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note or "Supervisor rejected client revision request.",
         )
 
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.SUPERVISOR_REJECTED_CLIENT_REVISION,
+            message="Supervisor rejected client revision request.",
+            metadata={
+                "note": note,
+                "revision_id": (
+                    latest_client_revision.id if latest_client_revision else None
+                ),
+            },
+        )
+
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 
     @action(
         detail=True,
@@ -680,6 +827,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         order.status = Order.Status.IN_PROGRESS
         order.save(update_fields=["status", "updated_at"])
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.WORK_STARTED,
+            message="Editor started work on the order.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -726,6 +880,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.editor = editor
         order.status = Order.Status.ASSIGNED
         order.save(update_fields=["editor", "status", "updated_at"])
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.EDITOR_ASSIGNED,
+            message="Editor assigned to the order.",
+            metadata={
+                "editor_id": order.editor_id,
+                "editor_username": getattr(order.editor, "username", ""),
+            },
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -787,13 +952,32 @@ class OrderViewSet(viewsets.ModelViewSet):
                 serializer=serializer,
             )
 
-            self._update_order_status(
+            self._log_activity(
                 order=order,
-                new_status=Order.Status.CLIENT_REVIEW,
-                user=request.user,
-                note="Supervisor approved the order.",
-                extra_updates={
-                    "supervisor_approved_at": timezone.now(),
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.SUPERVISOR_APPROVED,
+                message="Supervisor approved the order.",
+                metadata={
+                    "rating_id": rating.id,
+                    "score": rating.score,
+                    "comment": rating.comment,
+                },
+            )
+
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=(
+                    OrderActivityLog.ActivityType.RATING_CREATED
+                    if created
+                    else OrderActivityLog.ActivityType.RATING_UPDATED
+                ),
+                message="Order rating saved.",
+                metadata={
+                    "rating_id": rating.id,
+                    "source": rating.source,
+                    "score": rating.score,
+                    "comment": rating.comment,
                 },
             )
 
@@ -840,6 +1024,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 },
             )
 
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.SUPERVISOR_REVISION_REQUESTED,
+                message="Supervisor requested revision.",
+                metadata={
+                    "revision_id": revision.id,
+                    "note": revision.note,
+                },
+            )
+
             order_serializer = self.get_serializer(order)
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
@@ -864,6 +1059,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         order.status = Order.Status.IN_REVIEW
         order.save(update_fields=["status", "updated_at"])
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.REVIEW_STARTED,
+            message="Order moved to review stage.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -895,6 +1097,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         order.status = Order.Status.SUBMITTED
         order.save(update_fields=["status", "updated_at"])
+
+        self._log_activity(
+            order=order,
+            actor=request.user,
+            activity_type=OrderActivityLog.ActivityType.ORDER_SUBMITTED,
+            message="Order submitted for review.",
+        )
 
         serializer = self.get_serializer(order)
         return Response(serializer.data, status=status.HTTP_200_OK)

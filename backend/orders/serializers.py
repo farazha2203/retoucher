@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from .models import (
     Order,
+    OrderActivityLog,
     OrderComment,
     OrderDelivery,
     OrderImage,
@@ -196,6 +197,26 @@ class OrderStatusHistorySerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+class OrderActivityLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(
+        source="actor.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = OrderActivityLog
+        fields = (
+            "id",
+            "order",
+            "actor",
+            "actor_username",
+            "activity_type",
+            "message",
+            "metadata",
+            "created_at",
+        )
+        read_only_fields = fields
+
 class OrderSerializer(serializers.ModelSerializer):
     images = OrderImageSerializer(many=True, read_only=True)
     deliveries = OrderDeliverySerializer(many=True, read_only=True)
@@ -203,6 +224,7 @@ class OrderSerializer(serializers.ModelSerializer):
     ratings = OrderRatingSerializer(many=True, read_only=True)
     comments = OrderCommentSerializer(many=True, read_only=True)
     status_history = OrderStatusHistorySerializer(many=True, read_only=True)
+    activity_logs = OrderActivityLogSerializer(many=True, read_only=True)
     client_username = serializers.CharField(
         source="client.username",
         read_only=True,
@@ -233,6 +255,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "ratings",
             "comments",
             "status_history",
+            "activity_logs",
             "created_at",
             "updated_at",
         )
@@ -252,6 +275,7 @@ class OrderSerializer(serializers.ModelSerializer):
             "ratings",
             "comments",
             "status_history",
+            "activity_logs",
             "created_at",
             "updated_at",
         )

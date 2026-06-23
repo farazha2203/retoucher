@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     Order,
+    OrderActivityLog,
     OrderComment,
     OrderDelivery,
     OrderImage,
@@ -161,5 +162,25 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
     list_filter = (
         "from_status",
         "to_status",
+        "created_at",
+    )
+
+@admin.register(OrderActivityLog)
+class OrderActivityLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "order",
+        "activity_type",
+        "actor",
+        "created_at",
+    )
+    search_fields = (
+        "order__title",
+        "actor__username",
+        "actor__email",
+        "message",
+    )
+    list_filter = (
+        "activity_type",
         "created_at",
     )

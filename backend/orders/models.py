@@ -354,3 +354,59 @@ class OrderStatusHistory(models.Model):
 
     def __str__(self):
         return f"Order #{self.order_id}: {self.from_status} -> {self.to_status}"
+    
+class OrderActivityLog(models.Model):
+    class ActivityType(models.TextChoices):
+        ORDER_SUBMITTED = "order_submitted", "Order Submitted"
+        REVIEW_STARTED = "review_started", "Review Started"
+        EDITOR_ASSIGNED = "editor_assigned", "Editor Assigned"
+        WORK_STARTED = "work_started", "Work Started"
+        DELIVERY_UPLOADED = "delivery_uploaded", "Delivery Uploaded"
+        SUPERVISOR_APPROVED = "supervisor_approved", "Supervisor Approved"
+        SUPERVISOR_REVISION_REQUESTED = "supervisor_revision_requested", "Supervisor Revision Requested"
+        EDITOR_REVISION_STARTED = "editor_revision_started", "Editor Revision Started"
+        CLIENT_APPROVED = "client_approved", "Client Approved"
+        CLIENT_REVISION_REQUESTED = "client_revision_requested", "Client Revision Requested"
+        SUPERVISOR_ACCEPTED_CLIENT_REVISION = "supervisor_accepted_client_revision", "Supervisor Accepted Client Revision"
+        SUPERVISOR_REJECTED_CLIENT_REVISION = "supervisor_rejected_client_revision", "Supervisor Rejected Client Revision"
+        COMMENT_CREATED = "comment_created", "Comment Created"
+        COMMENT_UPDATED = "comment_updated", "Comment Updated"
+        COMMENT_DELETED = "comment_deleted", "Comment Deleted"
+        RATING_CREATED = "rating_created", "Rating Created"
+        RATING_UPDATED = "rating_updated", "Rating Updated"
+        SETTLEMENT_STARTED = "settlement_started", "Settlement Started"
+        PAYMENT_RECORDED = "payment_recorded", "Payment Recorded"
+        ORDER_CLOSED = "order_closed", "Order Closed"
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="activity_logs",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="order_activity_logs",
+        null=True,
+        blank=True,
+    )
+    activity_type = models.CharField(
+        max_length=64,
+        choices=ActivityType.choices,
+    )
+    message = models.TextField(
+        blank=True,
+    )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = ("created_at",)
+
+    def __str__(self):
+        return f"Order #{self.order_id} - {self.activity_type}"
