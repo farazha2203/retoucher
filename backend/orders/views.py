@@ -431,6 +431,83 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="supervisor-accept-client-revision",
+    )
+    def supervisor_accept_client_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can accept client revision requests.")
+
+        if order.status != Order.Status.CLIENT_REVISION_REQUESTED:
+            return Response(
+                {"detail": "Only client revision requested orders can be accepted by supervisor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        latest_client_revision = order.revisions.filter(
+            source=OrderRevision.Source.CLIENT
+        ).order_by("-created_at").first()
+
+        note = request.data.get("note", "").strip()
+
+        if note:
+            OrderComment.objects.create(
+                order=order,
+                sender=request.user,
+                target_type=OrderComment.TargetType.REVISION,
+                revision=latest_client_revision,
+                text=note,
+            )
+
+        order.status = Order.Status.REVISION_REQUIRED
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="supervisor-reject-client-revision",
+    )
+    def supervisor_reject_client_revision(self, request, pk=None):
+        order = self.get_object()
+
+        if not self._is_staff_role(request.user):
+            raise PermissionDenied("Only staff roles can reject client revision requests.")
+
+        if order.status != Order.Status.CLIENT_REVISION_REQUESTED:
+            return Response(
+                {"detail": "Only client revision requested orders can be rejected by supervisor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        latest_client_revision = order.revisions.filter(
+            source=OrderRevision.Source.CLIENT
+        ).order_by("-created_at").first()
+
+        note = request.data.get("note", "").strip()
+
+        if note:
+            OrderComment.objects.create(
+                order=order,
+                sender=request.user,
+                target_type=OrderComment.TargetType.REVISION,
+                revision=latest_client_revision,
+                text=note,
+            )
+
+        order.status = Order.Status.CLIENT_REVIEW
+        order.save(update_fields=["status", "updated_at"])
+
+        serializer = self.get_serializer(order)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 
     @action(
         detail=True,
