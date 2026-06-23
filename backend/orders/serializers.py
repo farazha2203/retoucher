@@ -287,6 +287,39 @@ class OrderActivityLogSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+class OrderListSerializer(serializers.ModelSerializer):
+    client_username = serializers.CharField(
+        source="client.username",
+        read_only=True,
+    )
+    editor_username = serializers.CharField(
+        source="editor.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = Order
+        fields = (
+            "id",
+            "client",
+            "client_username",
+            "editor",
+            "editor_username",
+            "title",
+            "status",
+            "revision_count",
+            "deadline",
+            "supervisor_approved_at",
+            "client_approved_at",
+            "settlement_started_at",
+            "paid_at",
+            "closed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+        
 class OrderSerializer(serializers.ModelSerializer):
     images = OrderImageSerializer(many=True, read_only=True)
     deliveries = OrderDeliverySerializer(many=True, read_only=True)

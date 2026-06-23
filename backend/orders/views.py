@@ -5,6 +5,12 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from datetime import datetime, time
+from django.utils.dateparse import parse_date, parse_datetime
+from rest_framework import filters
+from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
+from django.db import models
 from .models import (
     Order,
     OrderActivityLog,
@@ -21,6 +27,7 @@ from .serializers import (
     OrderCommentSerializer,
     OrderDeliverySerializer,
     OrderImageSerializer,
+    OrderListSerializer,
     OrderRatingSerializer,
     OrderRevisionSerializer,
     OrderSerializer,
@@ -30,6 +37,12 @@ from .serializers import (
 User = get_user_model()
 
 
+class OrderPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = (
@@ -37,6 +50,167 @@ class OrderViewSet(viewsets.ModelViewSet):
         CanCreateOrder,
         IsOrderOwnerOrStaffRole,
     )
+    pagination_class = OrderPagination
+    filter_backends = (
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    )
+    search_fields = (
+        "title",
+        "description",
+        "client__username",
+        "editor__username",
+    )
+    ordering_fields = (
+        "id",
+        "created_at",
+        "updated_at",
+        "deadline",
+        "status",
+    )
+    ordering = ("-created_at",)
+
+    def _parse_bool_query_param(self, value):
+        if value is None:
+            return None
+
+        normalized = str(value).strip().lower()
+
+        if normalized in {"true", "1", "yes", "y"}:
+            return True
+
+        if normalized in {"false", "0", "no", "n"}:
+            return False
+
+        raise ValidationError(
+            {"detail": f"Invalid boolean query parameter value: {value}"}
+        )
+
+    def _parse_datetime_query_param(self, value, field_name, end_of_day=False):
+        if not value:
+            return None
+
+        parsed_datetime = parse_datetime(value)
+
+        if parsed_datetime is not None:
+            if timezone.is_naive(parsed_datetime):
+                parsed_datetime = timezone.make_aware(
+                    parsed_datetime,
+                    timezone.get_current_timezone(),
+                )
+            return parsed_datetime
+
+        parsed_date = parse_date(value)
+
+        if parsed_date is not None:
+            parsed_time = time.max if end_of_day else time.min
+            parsed_datetime = datetime.combine(parsed_date, parsed_time)
+            return timezone.make_aware(
+                parsed_datetime,
+                timezone.get_current_timezone(),
+            )
+
+        raise ValidationError(
+            {
+                field_name: "Invalid date/datetime format. Use YYYY-MM-DD or ISO datetime."
+            }
+        )
+
+    def _apply_order_filters(self, queryset):
+        params = self.request.query_params
+
+        status_param = params.get("status")
+        client_param = params.get("client") or params.get("client_id")
+        editor_param = params.get("editor") or params.get("editor_id")
+        unassigned_param = params.get("unassigned")
+        mine_param = params.get("mine")
+        assigned_to_me_param = params.get("assigned_to_me")
+
+        deadline_after = self._parse_datetime_query_param(
+            params.get("deadline_after"),
+            "deadline_after",
+        )
+        deadline_before = self._parse_datetime_query_param(
+            params.get("deadline_before"),
+            "deadline_before",
+            end_of_day=True,
+        )
+        created_after = self._parse_datetime_query_param(
+            params.get("created_after"),
+            "created_after",
+        )
+        created_before = self._parse_datetime_query_param(
+            params.get("created_before"),
+            "created_before",
+            end_of_day=True,
+        )
+        updated_after = self._parse_datetime_query_param(
+            params.get("updated_after"),
+            "updated_after",
+        )
+        updated_before = self._parse_datetime_query_param(
+            params.get("updated_before"),
+            "updated_before",
+            end_of_day=True,
+        )
+
+        if status_param:
+            statuses = [
+                item.strip() for item in status_param.split(",") if item.strip()
+            ]
+            queryset = queryset.filter(status__in=statuses)
+
+        if client_param:
+            queryset = queryset.filter(client_id=client_param)
+
+        if editor_param:
+            queryset = queryset.filter(editor_id=editor_param)
+
+        unassigned = self._parse_bool_query_param(unassigned_param)
+        if unassigned is True:
+            queryset = queryset.filter(editor__isnull=True)
+
+        mine = self._parse_bool_query_param(mine_param)
+        if mine is True:
+            user = self.request.user
+
+            if self._is_staff_role(user):
+                # Staff can see all orders by default.
+                # So mine=true does not narrow staff results.
+                pass
+            else:
+                queryset = queryset.filter(
+                    models.Q(client=user) | models.Q(editor=user)
+                )
+
+        assigned_to_me = self._parse_bool_query_param(assigned_to_me_param)
+        if assigned_to_me is True:
+            queryset = queryset.filter(editor=self.request.user)
+
+        if deadline_after:
+            queryset = queryset.filter(deadline__gte=deadline_after)
+
+        if deadline_before:
+            queryset = queryset.filter(deadline__lte=deadline_before)
+
+        if created_after:
+            queryset = queryset.filter(created_at__gte=created_after)
+
+        if created_before:
+            queryset = queryset.filter(created_at__lte=created_before)
+
+        if updated_after:
+            queryset = queryset.filter(updated_at__gte=updated_after)
+
+        if updated_before:
+            queryset = queryset.filter(updated_at__lte=updated_before)
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return OrderListSerializer
+        return super().get_serializer_class()
 
     def _save_or_update_rating(self, order, user, source, serializer):
         ratings = OrderRating.objects.filter(
@@ -903,18 +1077,25 @@ class OrderViewSet(viewsets.ModelViewSet):
         ]
 
     def get_queryset(self):
+        queryset = Order.objects.select_related("client", "editor")
+
         user = self.request.user
 
-        if user.is_staff or user.role in ["admin", "support", "supervisor"]:
-            return Order.objects.all()
+        if not self._is_staff_role(user):
+            queryset = queryset.filter(models.Q(client=user) | models.Q(editor=user))
 
-        if user.role == "client":
-            return Order.objects.filter(client=user)
+        if getattr(self, "action", None) != "list":
+            queryset = queryset.prefetch_related(
+                "images",
+                "deliveries",
+                "revisions",
+                "ratings",
+                "comments",
+                "status_history",
+                "activity_logs",
+            )
 
-        if user.role == "editor":
-            return Order.objects.filter(editor=user)
-
-        return Order.objects.none()
+        return self._apply_order_filters(queryset)
 
     def perform_create(self, serializer):
         if getattr(self.request.user, "role", None) != "client":
