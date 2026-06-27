@@ -1709,3 +1709,116 @@ class ProjectRequestAPITests(TestCase):
         self.assertIsNotNone(activity)
         self.assertEqual(activity.actor, self.client_user)
         self.assertIn("image_id", activity.metadata)
+
+    def test_submitting_public_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public proposal activity request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "proposed_price": 300000,
+                "editor_fee": 220000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I can do this with natural skin texture.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        proposal = ProjectProposal.objects.get(project_request=project_request)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.editor_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+
+    def test_selecting_project_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Proposal selected activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {
+                "client_note": "I choose this editor.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.client_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+
+    def test_managed_assign_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Managed assign activity request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+                "editor_note": "Assigned by support for natural beauty retouch.",
+                "support_note": "Editor selected based on skill and availability.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal = ProjectProposal.objects.get(project_request=project_request)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.staff_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
