@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 from django.utils import timezone
+from datetime import timedelta
 
 from .models import Notification
 
@@ -1135,6 +1136,134 @@ class NotificationAPITests(APITestCase):
             "&is_read=false"
             f"&notification_type={Notification.Type.PROPOSAL}"
             f"&priority={Notification.Priority.HIGH}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], matching_notification.id)
+
+    def test_notification_list_can_filter_by_created_after(self):
+        old_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Old notification",
+        )
+        recent_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Recent notification",
+        )
+
+        now = timezone.now()
+        old_created_at = now - timedelta(days=10)
+        recent_created_at = now - timedelta(days=1)
+
+        Notification.objects.filter(id=old_notification.id).update(
+            created_at=old_created_at
+        )
+        Notification.objects.filter(id=recent_notification.id).update(
+            created_at=recent_created_at
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/",
+            {
+                "created_after": (now - timedelta(days=5)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+        result_ids = [item["id"] for item in results]
+
+        self.assertIn(recent_notification.id, result_ids)
+        self.assertNotIn(old_notification.id, result_ids)
+
+    def test_notification_list_can_filter_by_created_before(self):
+        old_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Old notification",
+        )
+        recent_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Recent notification",
+        )
+
+        now = timezone.now()
+        old_created_at = now - timedelta(days=10)
+        recent_created_at = now - timedelta(days=1)
+
+        Notification.objects.filter(id=old_notification.id).update(
+            created_at=old_created_at
+        )
+        Notification.objects.filter(id=recent_notification.id).update(
+            created_at=recent_created_at
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/",
+            {
+                "created_before": (now - timedelta(days=5)).isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+        result_ids = [item["id"] for item in results]
+
+        self.assertIn(old_notification.id, result_ids)
+        self.assertNotIn(recent_notification.id, result_ids)
+
+    def test_notification_list_rejects_invalid_created_after_filter(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/?created_after=invalid-date"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_notification_list_can_combine_search_and_date_filters(self):
+        matching_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Proposal accepted recently",
+        )
+        old_matching_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Proposal accepted old",
+        )
+        recent_non_matching_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Order payment received recently",
+        )
+
+        now = timezone.now()
+
+        Notification.objects.filter(id=matching_notification.id).update(
+            created_at=now - timedelta(days=1)
+        )
+        Notification.objects.filter(id=old_matching_notification.id).update(
+            created_at=now - timedelta(days=10)
+        )
+        Notification.objects.filter(id=recent_non_matching_notification.id).update(
+            created_at=now - timedelta(days=1)
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/",
+            {
+                "search": "proposal",
+                "created_after": (now - timedelta(days=5)).isoformat(),
+            },
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)

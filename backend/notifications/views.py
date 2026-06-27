@@ -1,7 +1,9 @@
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -18,6 +20,24 @@ class NotificationViewSet(
     serializer_class = NotificationSerializer
     permission_classes = (IsAuthenticated,)
 
+    def parse_datetime_filter(self, value, field_name):
+        parsed_value = parse_datetime(value)
+
+        if parsed_value is None:
+            raise ValidationError(
+                {
+                    field_name: "Must be a valid ISO 8601 datetime.",
+                }
+            )
+
+        if timezone.is_naive(parsed_value):
+            parsed_value = timezone.make_aware(
+                parsed_value,
+                timezone.get_current_timezone(),
+            )
+
+        return parsed_value
+
     def get_queryset(self):
         queryset = (
             Notification.objects.filter(recipient=self.request.user)
@@ -29,6 +49,8 @@ class NotificationViewSet(
         notification_type = self.request.query_params.get("notification_type")
         priority = self.request.query_params.get("priority")
         search = self.request.query_params.get("search")
+        created_after = self.request.query_params.get("created_after")
+        created_before = self.request.query_params.get("created_before")
 
         if is_read is not None:
             normalized_is_read = is_read.lower()
@@ -45,12 +67,26 @@ class NotificationViewSet(
             queryset = queryset.filter(priority=priority)
 
         if search:
+            queryset = queryset.filter(Q(title__icontains=search))
+
+        if created_after:
             queryset = queryset.filter(
-                Q(title__icontains=search)
+                created_at__gte=self.parse_datetime_filter(
+                    created_after,
+                    "created_after",
+                )
+            )
+
+        if created_before:
+            queryset = queryset.filter(
+                created_at__lte=self.parse_datetime_filter(
+                    created_before,
+                    "created_before",
+                )
             )
 
         return queryset
-    
+
     @action(detail=False, methods=["post"], url_path="mark-selected-read")
     def mark_selected_read(self, request):
         notification_ids = request.data.get("ids", [])
@@ -77,7 +113,7 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(detail=False, methods=["get"], url_path="recent")
     def recent(self, request):
         raw_limit = request.query_params.get("limit", 5)
@@ -112,7 +148,7 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(detail=False, methods=["get"], url_path="choices")
     def choices(self, request):
         return Response(
@@ -134,7 +170,7 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(detail=False, methods=["post"], url_path="delete-selected")
     def delete_selected(self, request):
         notification_ids = request.data.get("ids", [])
@@ -185,7 +221,7 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(detail=True, methods=["post"], url_path="mark-unread")
     def mark_unread(self, request, pk=None):
         notification = self.get_object()
@@ -211,7 +247,7 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request):
         queryset = Notification.objects.filter(recipient=request.user)
@@ -224,17 +260,13 @@ class NotificationViewSet(
             priority=Notification.Priority.HIGH,
         ).count()
 
-        by_type = {
-            choice_value: 0
-            for choice_value, _ in Notification.Type.choices
-        }
+        by_type = {choice_value: 0 for choice_value, _ in Notification.Type.choices}
 
         for row in queryset.values("notification_type").annotate(count=Count("id")):
             by_type[row["notification_type"]] = row["count"]
 
         by_priority = {
-            choice_value: 0
-            for choice_value, _ in Notification.Priority.choices
+            choice_value: 0 for choice_value, _ in Notification.Priority.choices
         }
 
         for row in queryset.values("priority").annotate(count=Count("id")):
