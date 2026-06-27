@@ -953,6 +953,97 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_recent_notifications_returns_latest_owned_notifications_with_limit(self):
+        first_notification = Notification.objects.create(
+            recipient=self.user,
+            title="First notification",
+        )
+        second_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Second notification",
+        )
+        third_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Third notification",
+        )
+        Notification.objects.create(
+            recipient=self.other_user,
+            title="Other user notification",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/recent/?limit=2")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 2)
+
+        result_ids = [item["id"] for item in response.data["results"]]
+
+        self.assertEqual(result_ids, [third_notification.id, second_notification.id])
+        self.assertNotIn(first_notification.id, result_ids)
+
+    def test_recent_notifications_uses_default_limit(self):
+        notifications = [
+            Notification.objects.create(
+                recipient=self.user,
+                title=f"Notification {index}",
+            )
+            for index in range(6)
+        ]
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/recent/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 5)
+
+        result_ids = [item["id"] for item in response.data["results"]]
+        expected_ids = [notification.id for notification in reversed(notifications[-5:])]
+
+        self.assertEqual(result_ids, expected_ids)
+
+    def test_recent_notifications_caps_limit_to_twenty(self):
+        notifications = [
+            Notification.objects.create(
+                recipient=self.user,
+                title=f"Notification {index}",
+            )
+            for index in range(25)
+        ]
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/recent/?limit=100")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 20)
+
+        result_ids = [item["id"] for item in response.data["results"]]
+        expected_ids = [notification.id for notification in reversed(notifications[-20:])]
+
+        self.assertEqual(result_ids, expected_ids)
+
+    def test_recent_notifications_rejects_invalid_limit(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/recent/?limit=invalid")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_recent_notifications_rejects_non_positive_limit(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/recent/?limit=0")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_recent_notifications_requires_authentication(self):
+        response = self.client.get("/api/notifications/recent/")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 
 

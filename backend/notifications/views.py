@@ -71,6 +71,41 @@ class NotificationViewSet(
             status=status.HTTP_200_OK,
         )
     
+    @action(detail=False, methods=["get"], url_path="recent")
+    def recent(self, request):
+        raw_limit = request.query_params.get("limit", 5)
+
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return Response(
+                {
+                    "detail": "limit must be a positive integer.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if limit < 1:
+            return Response(
+                {
+                    "detail": "limit must be a positive integer.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        limit = min(limit, 20)
+
+        queryset = self.get_queryset()[:limit]
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response(
+            {
+                "count": len(serializer.data),
+                "results": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
     @action(detail=False, methods=["get"], url_path="choices")
     def choices(self, request):
         return Response(
