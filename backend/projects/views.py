@@ -1,7 +1,7 @@
 from rest_framework import decorators, permissions, response, status, viewsets
 from .models import ProjectRequest
 from django.db import models
-from .permissions import IsProjectRequestOwnerOrStaff
+from .permissions import IsProjectRequestOwnerOrStaff, IsProjectRequestParticipantOrStaff
 from .serializers import (
     ConvertProjectRequestToOrderSerializer,
     DirectEditorDeclineSerializer,
@@ -22,6 +22,14 @@ from .serializers import (
 
 class ProjectRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsProjectRequestOwnerOrStaff]
+    def get_permissions(self):
+        if self.action == "retrieve":
+            return [
+                permissions.IsAuthenticated(),
+                IsProjectRequestParticipantOrStaff(),
+            ]
+
+        return super().get_permissions()
 
     def get_editor_profile(self):
         return getattr(self.request.user, "editor_profile", None)

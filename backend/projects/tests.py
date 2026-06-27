@@ -91,6 +91,8 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], ProjectRequest.Status.SUBMITTED)
+        self.assertIn("submitted_at", response.data)
         self.assertEqual(ProjectRequest.objects.count(), 1)
         project_request = ProjectRequest.objects.first()
         self.assertEqual(project_request.client, self.client_user)
@@ -129,6 +131,8 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], ProjectRequest.Status.WAITING_FOR_EDITOR)
+        self.assertIn("submitted_at", response.data)
         project_request = ProjectRequest.objects.first()
         self.assertEqual(
             project_request.status, ProjectRequest.Status.WAITING_FOR_EDITOR
@@ -151,6 +155,7 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], ProjectRequest.Status.OPEN_FOR_QUOTES)
         self.assertEqual(
             ProjectRequest.objects.first().status,
             ProjectRequest.Status.OPEN_FOR_QUOTES,
@@ -172,6 +177,7 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], ProjectRequest.Status.OPEN_FOR_SAMPLES)
         self.assertEqual(
             ProjectRequest.objects.first().status,
             ProjectRequest.Status.OPEN_FOR_SAMPLES,
@@ -1111,3 +1117,154 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(order.editor, self.editor_user)
         self.assertEqual(order.status, Order.Status.ASSIGNED)
         self.assertEqual(project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER)
+
+    def test_client_cannot_see_under_review_sample_proposal_in_detail(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample visibility request",
+            edit_style=self.style,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            is_visible_to_client=False,
+        )
+
+        self.authenticate_client()
+        response = self.client.get(f"/api/projects/requests/{project_request.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["proposals"], [])
+
+    def test_client_can_see_approved_sample_proposal_in_detail(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Approved sample visibility request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.APPROVED,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            supervisor_score=9,
+            is_visible_to_client=True,
+        )
+
+        self.authenticate_client()
+        response = self.client.get(f"/api/projects/requests/{project_request.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["proposals"]), 1)
+        self.assertEqual(response.data["proposals"][0]["id"], proposal.id)
+
+    def test_staff_can_see_all_proposals_in_detail(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="staff_visibility_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Staff Visibility Editor",
+            is_available=True,
+            accepts_public_requests=True,
+            accepts_sample_challenges=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Staff visibility request",
+            edit_style=self.style,
+        )
+
+        hidden = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            is_visible_to_client=False,
+        )
+
+        approved = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=other_editor_profile,
+            status=ProjectProposal.Status.APPROVED,
+            proposed_price=500000,
+            editor_fee=350000,
+            estimated_delivery_hours=48,
+            supervisor_score=9,
+            is_visible_to_client=True,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.get(f"/api/projects/requests/{project_request.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal_ids = {item["id"] for item in response.data["proposals"]}
+        self.assertEqual(proposal_ids, {hidden.id, approved.id})
+
+
+    def test_editor_only_sees_own_proposals_in_detail(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="visibility_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Visibility Editor",
+            is_available=True,
+            accepts_public_requests=True,
+            accepts_sample_challenges=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Editor visibility request",
+            edit_style=self.style,
+        )
+
+        own_proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=other_editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=280000,
+            editor_fee=200000,
+            estimated_delivery_hours=36,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+        response = self.client.get(f"/api/projects/requests/{project_request.id}/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["proposals"]), 1)
+        self.assertEqual(response.data["proposals"][0]["id"], own_proposal.id)

@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import models, transaction
 
 from accounts.serializers_editor import EditorProfileListSerializer
 from catalog.serializers import EditPackageSerializer, EditStyleSerializer
@@ -122,13 +122,12 @@ class ProjectRequestListSerializer(serializers.ModelSerializer):
 class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
     edit_style_detail = EditStyleSerializer(source="edit_style", read_only=True)
     package_detail = EditPackageSerializer(source="package", read_only=True)
-    target_editor_detail = EditorProfileListSerializer(
-        source="target_editor", read_only=True
-    )
+    target_editor_detail = EditorProfileListSerializer(source="target_editor", read_only=True)
     images = ProjectRequestImageSerializer(many=True, read_only=True)
-    proposals = ProjectProposalSerializer(many=True, read_only=True)
+    proposals = serializers.SerializerMethodField()
 
-    class Meta(ProjectRequestListSerializer.Meta):
+    class Meta:
+        model = ProjectRequest
         fields = ProjectRequestListSerializer.Meta.fields + [
             "description",
             "client_note",
@@ -149,6 +148,42 @@ class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
             "converted_order",
         ]
 
+    def get_proposals(self, obj):
+        request = self.context.get("request")
+        proposals = obj.proposals.select_related("editor", "editor__user").order_by("-submitted_at")
+
+        if request is None or not request.user.is_authenticated:
+            proposals = proposals.none()
+        elif request.user.is_staff:
+            pass
+        elif obj.client_id == request.user.id:
+            proposals = proposals.filter(
+                models.Q(is_visible_to_client=True)
+                | models.Q(status=ProjectProposal.Status.ACCEPTED_BY_CLIENT)
+                | models.Q(
+                    project_request__request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+                    status=ProjectProposal.Status.SUBMITTED,
+                )
+                | models.Q(
+                    project_request__request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+                    status=ProjectProposal.Status.APPROVED,
+                )
+            )
+        else:
+            editor_profile = getattr(request.user, "editor_profile", None)
+
+            if editor_profile:
+                proposals = proposals.filter(editor=editor_profile)
+            else:
+                proposals = proposals.none()
+
+        serializer = ProjectProposalSerializer(
+            proposals,
+            many=True,
+            context=self.context,
+        )
+        return serializer.data
+
 
 class ProjectRequestCreateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -156,6 +191,7 @@ class ProjectRequestCreateSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "request_type",
+            "status",
             "title",
             "description",
             "edit_style",
@@ -165,8 +201,9 @@ class ProjectRequestCreateSerializer(serializers.ModelSerializer):
             "budget_max",
             "preferred_deadline",
             "client_note",
+            "submitted_at",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "status", "submitted_at"]
 
     def validate(self, attrs):
         request_type = attrs.get(
@@ -703,7 +740,8 @@ class ReviewSampleProposalSerializer(serializers.Serializer):
         )
 
         return proposal
-    
+
+
 class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True)
 
@@ -743,10 +781,14 @@ class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
         # Direct editor workflow currently creates a submitted proposal and marks request editor_selected.
         proposal = accepted_proposal or submitted_proposal
 
-        if project_request.request_type in [
-            ProjectRequest.RequestType.PUBLIC_QUOTE,
-            ProjectRequest.RequestType.SAMPLE_CHALLENGE,
-        ] and accepted_proposal is None:
+        if (
+            project_request.request_type
+            in [
+                ProjectRequest.RequestType.PUBLIC_QUOTE,
+                ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            ]
+            and accepted_proposal is None
+        ):
             raise serializers.ValidationError(
                 "Public quote and sample challenge requests require an accepted proposal."
             )
@@ -771,7 +813,9 @@ class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
 
         deadline = None
         if proposal and proposal.estimated_delivery_hours:
-            deadline = timezone.now() + timedelta(hours=proposal.estimated_delivery_hours)
+            deadline = timezone.now() + timedelta(
+                hours=proposal.estimated_delivery_hours
+            )
         elif project_request.preferred_deadline:
             deadline = project_request.preferred_deadline
 
@@ -843,7 +887,8 @@ class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
         )
 
         return order
-    
+
+
 class ManagedAssignProjectRequestSerializer(serializers.Serializer):
     editor = serializers.IntegerField()
     proposed_price = serializers.IntegerField(min_value=1)
@@ -881,9 +926,7 @@ class ManagedAssignProjectRequestSerializer(serializers.Serializer):
         try:
             editor_profile = EditorProfile.objects.get(id=editor_id)
         except EditorProfile.DoesNotExist:
-            raise serializers.ValidationError(
-                {"editor": "Editor profile not found."}
-            )
+            raise serializers.ValidationError({"editor": "Editor profile not found."})
 
         if not editor_profile.is_available:
             raise serializers.ValidationError(
