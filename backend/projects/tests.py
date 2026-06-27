@@ -1497,3 +1497,99 @@ class ProjectRequestAPITests(TestCase):
             response.data["activities_by_action"][ProjectRequestActivity.Action.MANAGED_ASSIGNED],
             1,
         )
+
+    def test_staff_can_filter_latest_project_request_activities_by_actor(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Actor filtered activity request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created by client.",
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.staff_user,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            message="Managed assignment by staff.",
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            "/api/projects/requests/latest-activities/",
+            {"actor": self.staff_user.id},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["actor"], self.staff_user.id)
+        self.assertEqual(
+            response.data[0]["action"],
+            ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+        )
+
+    def test_staff_can_limit_latest_project_request_activities(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Limited activity request",
+            edit_style=self.style,
+        )
+
+        for index in range(3):
+            ProjectRequestActivity.objects.create(
+                project_request=project_request,
+                actor=self.client_user,
+                action=ProjectRequestActivity.Action.CREATED,
+                message=f"Activity {index + 1}",
+                metadata={"index": index + 1},
+            )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            "/api/projects/requests/latest-activities/",
+            {"limit": 2},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+    def test_latest_project_request_activities_invalid_limit_falls_back_to_default(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Invalid limit activity request",
+            edit_style=self.style,
+        )
+
+        for index in range(3):
+            ProjectRequestActivity.objects.create(
+                project_request=project_request,
+                actor=self.client_user,
+                action=ProjectRequestActivity.Action.CREATED,
+                message=f"Activity {index + 1}",
+                metadata={"index": index + 1},
+            )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            "/api/projects/requests/latest-activities/",
+            {"limit": "invalid"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 3)
+
+        
