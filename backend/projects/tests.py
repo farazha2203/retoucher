@@ -1822,3 +1822,210 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(activity.actor, self.staff_user)
         self.assertEqual(activity.metadata["proposal_id"], proposal.id)
         self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+
+    def test_submitting_direct_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct proposal activity request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I can do a natural beauty retouch.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        proposal = ProjectProposal.objects.get(project_request=project_request)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_PROPOSAL_SUBMITTED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.editor_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+        self.assertEqual(activity.metadata["proposed_price"], str(proposal.proposed_price))
+
+    def test_declining_direct_request_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct decline activity request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-decline/",
+            {
+                "editor_note": "I am not available for this deadline.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal = ProjectProposal.objects.get(project_request=project_request)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_DECLINED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.editor_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+
+    def test_submitting_sample_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample proposal activity request",
+            edit_style=self.style,
+        )
+
+        sample_file = SimpleUploadedFile(
+            "sample.jpg",
+            b"fake-image-content",
+            content_type="image/jpeg",
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/sample-proposal/",
+            {
+                "proposed_price": 450000,
+                "editor_fee": 320000,
+                "estimated_delivery_hours": 48,
+                "editor_note": "I edited the sample with natural skin texture.",
+                "sample_note": "Skin cleanup, color balance, and natural contrast.",
+                "sample_file": sample_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        proposal = ProjectProposal.objects.get(project_request=project_request)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_PROPOSAL_SUBMITTED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.editor_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["editor_id"], self.editor_profile.id)
+
+    def test_reviewing_sample_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample review activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/review-sample/",
+            {
+                "action": "approve",
+                "supervisor_score": 9,
+                "supervisor_note": "Good natural retouch with realistic skin texture.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.staff_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(activity.metadata["status"], ProjectProposal.Status.APPROVED)
+        self.assertEqual(activity.metadata["supervisor_score"], 9)
+
+    def test_converting_project_request_to_order_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.EDITOR_SELECTED,
+            title="Conversion activity request",
+            description="Direct project description",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.SUBMITTED,
+            proposed_price=350000,
+            editor_fee=250000,
+            estimated_delivery_hours=24,
+            editor_note="I can do this work.",
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {
+                "note": "Client confirms conversion.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        order = Order.objects.get()
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.client_user)
+        self.assertEqual(activity.metadata["order_id"], order.id)
