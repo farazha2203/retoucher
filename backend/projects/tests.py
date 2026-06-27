@@ -5,9 +5,15 @@ from rest_framework.test import APIClient
 from django.core.files.uploadedfile import SimpleUploadedFile
 from orders.models import Order, OrderActivityLog, OrderImage, OrderStatusHistory
 
+
 from accounts.models import EditorProfile
 from catalog.models import EditCategory, EditPackage, EditStyle
-from .models import ProjectProposal, ProjectRequest, ProjectRequestActivity, ProjectRequestImage
+from .models import (
+    ProjectProposal,
+    ProjectRequest,
+    ProjectRequestActivity,
+    ProjectRequestImage,
+)
 
 
 class ProjectRequestAPITests(TestCase):
@@ -131,7 +137,9 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], ProjectRequest.Status.WAITING_FOR_EDITOR)
+        self.assertEqual(
+            response.data["status"], ProjectRequest.Status.WAITING_FOR_EDITOR
+        )
         self.assertIn("submitted_at", response.data)
         project_request = ProjectRequest.objects.first()
         self.assertEqual(
@@ -177,7 +185,9 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], ProjectRequest.Status.OPEN_FOR_SAMPLES)
+        self.assertEqual(
+            response.data["status"], ProjectRequest.Status.OPEN_FOR_SAMPLES
+        )
         self.assertEqual(
             ProjectRequest.objects.first().status,
             ProjectRequest.Status.OPEN_FOR_SAMPLES,
@@ -369,7 +379,6 @@ class ProjectRequestAPITests(TestCase):
 
         project_request.refresh_from_db()
         self.assertEqual(project_request.status, ProjectRequest.Status.CANCELLED)
-
 
     def test_editor_can_list_matching_public_quote_request(self):
         project_request = ProjectRequest.objects.create(
@@ -770,7 +779,9 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(order.title, "Selected direct request")
         self.assertIsNotNone(order.deadline)
 
-        self.assertEqual(project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER)
+        self.assertEqual(
+            project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER
+        )
         self.assertEqual(project_request.converted_order, order)
 
         self.assertEqual(OrderStatusHistory.objects.count(), 1)
@@ -1116,7 +1127,9 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(order.client, self.client_user)
         self.assertEqual(order.editor, self.editor_user)
         self.assertEqual(order.status, Order.Status.ASSIGNED)
-        self.assertEqual(project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER)
+        self.assertEqual(
+            project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER
+        )
 
     def test_client_cannot_see_under_review_sample_proposal_in_detail(self):
         project_request = ProjectRequest.objects.create(
@@ -1221,7 +1234,6 @@ class ProjectRequestAPITests(TestCase):
         proposal_ids = {item["id"] for item in response.data["proposals"]}
         self.assertEqual(proposal_ids, {hidden.id, approved.id})
 
-
     def test_editor_only_sees_own_proposals_in_detail(self):
         other_editor_user = get_user_model().objects.create_user(
             username="visibility_editor",
@@ -1322,7 +1334,9 @@ class ProjectRequestAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["action"], ProjectRequestActivity.Action.CREATED)
+        self.assertEqual(
+            response.data[0]["action"], ProjectRequestActivity.Action.CREATED
+        )
         self.assertEqual(response.data[0]["actor"], self.client_user.id)
 
     def test_client_cannot_get_project_request_activities(self):
@@ -1365,9 +1379,13 @@ class ProjectRequestAPITests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["action"], ProjectRequestActivity.Action.CREATED)
+        self.assertEqual(
+            response.data[0]["action"], ProjectRequestActivity.Action.CREATED
+        )
         self.assertEqual(response.data[0]["project_request"], project_request.id)
-        self.assertEqual(response.data[0]["project_request_title"], project_request.title)
+        self.assertEqual(
+            response.data[0]["project_request_title"], project_request.title
+        )
 
     def test_client_cannot_get_latest_project_request_activities(self):
         self.client.force_authenticate(user=self.client_user)
@@ -1415,7 +1433,9 @@ class ProjectRequestAPITests(TestCase):
             ProjectRequestActivity.Action.MANAGED_ASSIGNED,
         )
 
-    def test_staff_can_filter_latest_project_request_activities_by_project_request(self):
+    def test_staff_can_filter_latest_project_request_activities_by_project_request(
+        self,
+    ):
         first_request = ProjectRequest.objects.create(
             client=self.client_user,
             request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
@@ -1456,7 +1476,9 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["project_request"], second_request.id)
-        self.assertEqual(response.data[0]["project_request_title"], second_request.title)
+        self.assertEqual(
+            response.data[0]["project_request_title"], second_request.title
+        )
 
     def test_dashboard_summary_includes_project_request_activity_stats(self):
         project_request = ProjectRequest.objects.create(
@@ -1490,11 +1512,15 @@ class ProjectRequestAPITests(TestCase):
         self.assertIn("activities_by_action", response.data)
         self.assertGreaterEqual(response.data["total_activities"], 2)
         self.assertEqual(
-            response.data["activities_by_action"][ProjectRequestActivity.Action.CREATED],
+            response.data["activities_by_action"][
+                ProjectRequestActivity.Action.CREATED
+            ],
             1,
         )
         self.assertEqual(
-            response.data["activities_by_action"][ProjectRequestActivity.Action.MANAGED_ASSIGNED],
+            response.data["activities_by_action"][
+                ProjectRequestActivity.Action.MANAGED_ASSIGNED
+            ],
             1,
         )
 
@@ -1564,7 +1590,9 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
 
-    def test_latest_project_request_activities_invalid_limit_falls_back_to_default(self):
+    def test_latest_project_request_activities_invalid_limit_falls_back_to_default(
+        self,
+    ):
         project_request = ProjectRequest.objects.create(
             client=self.client_user,
             request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
@@ -1592,4 +1620,92 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 3)
 
-        
+    def test_creating_project_request_creates_activity_log(self):
+        self.client.force_authenticate(user=self.client_user)
+
+        payload = {
+            "request_type": ProjectRequest.RequestType.PUBLIC_QUOTE,
+            "title": "Activity auto created request",
+            "description": "Please retouch this project naturally.",
+            "edit_style": self.style.id,
+            "package": self.package.id,
+            "budget_min": "200000.00",
+            "budget_max": "700000.00",
+            "deadline": "2026-06-28T20:26:20Z",
+        }
+
+        response = self.client.post(
+            "/api/projects/requests/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        project_request = ProjectRequest.objects.get(
+            id=response.data["id"],
+        )
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CREATED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.client_user)
+        self.assertEqual(
+            activity.metadata["request_type"], project_request.request_type
+        )
+        self.assertEqual(activity.metadata["status"], project_request.status)
+
+    def test_uploading_project_request_image_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Image upload activity request",
+            description="Request with image upload activity.",
+            edit_style=self.style,
+            package=self.package,
+        )
+
+        image = SimpleUploadedFile(
+            "sample.png",
+            (
+                b"\x89PNG\r\n\x1a\n"
+                b"\x00\x00\x00\rIHDR"
+                b"\x00\x00\x00\x01"
+                b"\x00\x00\x00\x01"
+                b"\x08\x02\x00\x00\x00"
+                b"\x90wS\xde"
+                b"\x00\x00\x00\x0cIDAT"
+                b"\x08\xd7c\xf8\xff\xff?\x00\x05\xfe\x02\xfe"
+                b"\xdc\xccY\xe7"
+                b"\x00\x00\x00\x00IEND\xaeB`\x82"
+            ),
+            content_type="image/png",
+        )
+
+        self.client.force_authenticate(user=self.client_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/images/",
+            {
+                "image": image,
+                "caption": "Before retouch sample",
+                "is_sample_image": True,
+                "sort_order": 1,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.IMAGE_UPLOADED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.client_user)
+        self.assertIn("image_id", activity.metadata)
