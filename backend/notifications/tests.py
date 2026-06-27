@@ -5,6 +5,13 @@ from rest_framework.test import APITestCase
 
 from .models import Notification
 
+from .services import (
+    create_notification,
+    create_notifications,
+    mark_user_notifications_as_read,
+    notify_staff_users,
+)
+
 
 class NotificationModelTests(TestCase):
     def setUp(self):
@@ -395,3 +402,171 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(results[0]["id"], second.id)
         self.assertEqual(results[1]["id"], first.id)
+
+
+
+
+
+class NotificationServiceTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="service_notification_user",
+            password="TestPass123!",
+        )
+        self.other_user = get_user_model().objects.create_user(
+            username="service_notification_other_user",
+            password="TestPass123!",
+        )
+        self.actor = get_user_model().objects.create_user(
+            username="service_notification_actor",
+            password="TestPass123!",
+        )
+        self.staff_user = get_user_model().objects.create_user(
+            username="service_notification_staff",
+            password="TestPass123!",
+            is_staff=True,
+        )
+        self.inactive_staff_user = get_user_model().objects.create_user(
+            username="service_notification_inactive_staff",
+            password="TestPass123!",
+            is_staff=True,
+            is_active=False,
+        )
+
+    def test_create_notification_creates_notification(self):
+        notification = create_notification(
+            recipient=self.user,
+            actor=self.actor,
+            notification_type=Notification.Type.PROJECT_REQUEST,
+            priority=Notification.Priority.HIGH,
+            title="Service notification",
+            message="Created through service.",
+            data={"project_request_id": 10},
+        )
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(Notification.objects.count(), 1)
+        self.assertEqual(notification.recipient, self.user)
+        self.assertEqual(notification.actor, self.actor)
+        self.assertEqual(
+            notification.notification_type, Notification.Type.PROJECT_REQUEST
+        )
+        self.assertEqual(notification.priority, Notification.Priority.HIGH)
+        self.assertEqual(notification.title, "Service notification")
+        self.assertEqual(notification.data["project_request_id"], 10)
+
+    def test_create_notification_returns_none_when_recipient_is_none(self):
+        notification = create_notification(
+            recipient=None,
+            title="No recipient",
+        )
+
+        self.assertIsNone(notification)
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_create_notifications_creates_bulk_notifications_for_unique_recipients(
+        self,
+    ):
+        notifications = create_notifications(
+            recipients=[
+                self.user,
+                self.other_user,
+                self.user,
+                None,
+            ],
+            actor=self.actor,
+            notification_type=Notification.Type.PROPOSAL,
+            title="Bulk notification",
+            message="Created for multiple users.",
+            data={"proposal_id": 20},
+        )
+
+        self.assertEqual(len(notifications), 2)
+        self.assertEqual(Notification.objects.count(), 2)
+
+        recipients = set(Notification.objects.values_list("recipient", flat=True))
+
+        self.assertEqual(
+            recipients,
+            {self.user.id, self.other_user.id},
+        )
+
+    def test_create_notifications_returns_empty_list_when_no_valid_recipients(self):
+        notifications = create_notifications(
+            recipients=[None, None],
+            title="No valid recipients",
+        )
+
+        self.assertEqual(notifications, [])
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_notify_staff_users_notifies_only_active_staff_users(self):
+        create_notification(
+            recipient=self.user,
+            title="Existing non staff notification",
+        )
+
+        notifications = notify_staff_users(
+            actor=self.actor,
+            notification_type=Notification.Type.SYSTEM,
+            priority=Notification.Priority.NORMAL,
+            title="Staff notification",
+            message="Only active staff should receive this.",
+            data={"kind": "staff_alert"},
+        )
+
+        self.assertEqual(len(notifications), 1)
+
+        staff_notification = Notification.objects.get(
+            title="Staff notification",
+        )
+
+        self.assertEqual(staff_notification.recipient, self.staff_user)
+        self.assertEqual(staff_notification.actor, self.actor)
+        self.assertEqual(staff_notification.data["kind"], "staff_alert")
+
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.inactive_staff_user,
+                title="Staff notification",
+            ).exists()
+        )
+
+    def test_mark_user_notifications_as_read_marks_only_user_unread_notifications(self):
+        first = Notification.objects.create(
+            recipient=self.user,
+            title="First unread",
+            is_read=False,
+        )
+        second = Notification.objects.create(
+            recipient=self.user,
+            title="Second unread",
+            is_read=False,
+        )
+        already_read = Notification.objects.create(
+            recipient=self.user,
+            title="Already read",
+            is_read=True,
+        )
+        other_user_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other unread",
+            is_read=False,
+        )
+
+        updated_count = mark_user_notifications_as_read(self.user)
+
+        self.assertEqual(updated_count, 2)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        already_read.refresh_from_db()
+        other_user_notification.refresh_from_db()
+
+        self.assertTrue(first.is_read)
+        self.assertTrue(second.is_read)
+        self.assertTrue(already_read.is_read)
+        self.assertFalse(other_user_notification.is_read)
+
+        self.assertIsNotNone(first.read_at)
+        self.assertIsNotNone(second.read_at)
