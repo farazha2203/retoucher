@@ -71,6 +71,28 @@ class NotificationViewSet(
             status=status.HTTP_200_OK,
         )
     
+    @action(detail=False, methods=["get"], url_path="choices")
+    def choices(self, request):
+        return Response(
+            {
+                "types": [
+                    {
+                        "value": value,
+                        "label": str(label),
+                    }
+                    for value, label in Notification.Type.choices
+                ],
+                "priorities": [
+                    {
+                        "value": value,
+                        "label": str(label),
+                    }
+                    for value, label in Notification.Priority.choices
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+    
     @action(detail=False, methods=["post"], url_path="delete-selected")
     def delete_selected(self, request):
         notification_ids = request.data.get("ids", [])

@@ -925,6 +925,34 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_notification_choices_returns_type_and_priority_options(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/choices/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        type_values = [item["value"] for item in response.data["types"]]
+        priority_values = [item["value"] for item in response.data["priorities"]]
+
+        for value, _ in Notification.Type.choices:
+            self.assertIn(value, type_values)
+
+        for value, _ in Notification.Priority.choices:
+            self.assertIn(value, priority_values)
+
+        self.assertTrue(
+            all("label" in item for item in response.data["types"])
+        )
+        self.assertTrue(
+            all("label" in item for item in response.data["priorities"])
+        )
+
+    def test_notification_choices_requires_authentication(self):
+        response = self.client.get("/api/notifications/choices/")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 
 
