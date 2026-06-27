@@ -1268,3 +1268,32 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["proposals"]), 1)
         self.assertEqual(response.data["proposals"][0]["id"], own_proposal.id)
+
+    def test_staff_can_get_project_request_dashboard_summary(self):
+        ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Dashboard public quote request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get("/api/projects/requests/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("total_requests", response.data)
+        self.assertIn("total_proposals", response.data)
+        self.assertIn("requests_by_status", response.data)
+        self.assertIn("requests_by_type", response.data)
+        self.assertIn("proposals_by_status", response.data)
+        self.assertIn("latest_requests", response.data)
+        self.assertGreaterEqual(response.data["total_requests"], 1)
+
+    def test_client_cannot_get_project_request_dashboard_summary(self):
+        self.client.force_authenticate(user=self.client_user)
+
+        response = self.client.get("/api/projects/requests/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

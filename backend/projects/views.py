@@ -1,5 +1,5 @@
 from rest_framework import decorators, permissions, response, status, viewsets
-from .models import ProjectRequest
+from .models import ProjectProposal, ProjectRequest
 from django.db import models
 from .permissions import IsProjectRequestOwnerOrStaff, IsProjectRequestParticipantOrStaff
 from .serializers import (
@@ -403,6 +403,62 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
                 "deadline": order.deadline,
             },
             status=status.HTTP_201_CREATED,
+        )
+    
+    @decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="dashboard-summary",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def dashboard_summary(self, request):
+        project_requests = ProjectRequest.objects.all()
+        proposals = ProjectProposal.objects.all()
+
+        requests_by_status = {
+            item["status"]: item["count"]
+            for item in project_requests.values("status")
+            .annotate(count=models.Count("id"))
+            .order_by("status")
+        }
+
+        requests_by_type = {
+            item["request_type"]: item["count"]
+            for item in project_requests.values("request_type")
+            .annotate(count=models.Count("id"))
+            .order_by("request_type")
+        }
+
+        proposals_by_status = {
+            item["status"]: item["count"]
+            for item in proposals.values("status")
+            .annotate(count=models.Count("id"))
+            .order_by("status")
+        }
+
+        latest_requests = [
+            {
+                "id": item.id,
+                "title": item.title,
+                "request_type": item.request_type,
+                "status": item.status,
+                "client": item.client_id,
+                "edit_style": item.edit_style_id,
+                "created_at": item.created_at,
+            }
+            for item in project_requests.select_related("client", "edit_style").order_by("-created_at")[:10]
+        ]
+
+        return response.Response(
+            {
+                "total_requests": project_requests.count(),
+                "total_proposals": proposals.count(),
+                "requests_by_status": requests_by_status,
+                "requests_by_type": requests_by_type,
+                "proposals_by_status": proposals_by_status,
+                "latest_requests": latest_requests,
+            },
+            status=status.HTTP_200_OK,
         )
     
     @decorators.action(
