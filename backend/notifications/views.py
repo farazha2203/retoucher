@@ -1,3 +1,4 @@
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -42,6 +43,45 @@ class NotificationViewSet(
             queryset = queryset.filter(priority=priority)
 
         return queryset
+    
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        queryset = Notification.objects.filter(recipient=request.user)
+
+        total_count = queryset.count()
+        unread_count = queryset.filter(is_read=False).count()
+        read_count = total_count - unread_count
+        high_priority_unread_count = queryset.filter(
+            is_read=False,
+            priority=Notification.Priority.HIGH,
+        ).count()
+
+        by_type = {
+            choice_value: 0
+            for choice_value, _ in Notification.Type.choices
+        }
+
+        for row in queryset.values("notification_type").annotate(count=Count("id")):
+            by_type[row["notification_type"]] = row["count"]
+
+        by_priority = {
+            choice_value: 0
+            for choice_value, _ in Notification.Priority.choices
+        }
+
+        for row in queryset.values("priority").annotate(count=Count("id")):
+            by_priority[row["priority"]] = row["count"]
+
+        return Response(
+            {
+                "total_count": total_count,
+                "unread_count": unread_count,
+                "read_count": read_count,
+                "high_priority_unread_count": high_priority_unread_count,
+                "by_type": by_type,
+                "by_priority": by_priority,
+            }
+        )
 
     @action(detail=False, methods=["get"], url_path="unread-count")
     def unread_count(self, request):

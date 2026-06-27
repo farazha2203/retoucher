@@ -155,6 +155,66 @@ class NotificationAPITests(APITestCase):
             return response.data["results"]
         return response.data
     
+    def test_notification_summary_returns_counts_for_authenticated_user(self):
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            priority=Notification.Priority.NORMAL,
+            title="System unread",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Proposal unread high",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.NORMAL,
+            title="Proposal read",
+            is_read=True,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.ORDER,
+            priority=Notification.Priority.NORMAL,
+            title="Order read",
+            is_read=True,
+        )
+        Notification.objects.create(
+            recipient=self.other_user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Other user notification",
+            is_read=False,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(response.data["total_count"], 4)
+        self.assertEqual(response.data["unread_count"], 2)
+        self.assertEqual(response.data["read_count"], 2)
+        self.assertEqual(response.data["high_priority_unread_count"], 1)
+
+        self.assertEqual(response.data["by_type"][Notification.Type.SYSTEM], 1)
+        self.assertEqual(response.data["by_type"][Notification.Type.PROPOSAL], 2)
+        self.assertEqual(response.data["by_type"][Notification.Type.ORDER], 1)
+
+        self.assertEqual(response.data["by_priority"][Notification.Priority.NORMAL], 3)
+        self.assertEqual(response.data["by_priority"][Notification.Priority.HIGH], 1)
+
+    def test_notification_summary_requires_authentication(self):
+        response = self.client.get("/api/notifications/summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
     def test_notification_list_can_filter_by_unread(self):
         unread_notification = Notification.objects.create(
             recipient=self.user,
