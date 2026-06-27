@@ -44,6 +44,32 @@ class NotificationViewSet(
 
         return queryset
     
+    @action(detail=True, methods=["post"], url_path="mark-unread")
+    def mark_unread(self, request, pk=None):
+        notification = self.get_object()
+
+        notification.is_read = False
+        notification.read_at = None
+        notification.save(update_fields=["is_read", "read_at"])
+
+        serializer = self.get_serializer(notification)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["delete"], url_path="clear-read")
+    def clear_read(self, request):
+        deleted_count, _ = Notification.objects.filter(
+            recipient=request.user,
+            is_read=True,
+        ).delete()
+
+        return Response(
+            {
+                "deleted_count": deleted_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request):
         queryset = Notification.objects.filter(recipient=request.user)

@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.utils import timezone
 
 from .models import Notification
 
@@ -209,6 +210,105 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(response.data["by_priority"][Notification.Priority.NORMAL], 3)
         self.assertEqual(response.data["by_priority"][Notification.Priority.HIGH], 1)
+
+    def test_mark_notification_as_unread_marks_only_owned_notification_unread(self):
+        notification = Notification.objects.create(
+            recipient=self.user,
+            title="Read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+        other_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            f"/api/notifications/{notification.id}/mark-unread/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        notification.refresh_from_db()
+        other_notification.refresh_from_db()
+
+        self.assertFalse(notification.is_read)
+        self.assertIsNone(notification.read_at)
+
+        self.assertTrue(other_notification.is_read)
+        self.assertIsNotNone(other_notification.read_at)
+
+    def test_mark_notification_as_unread_does_not_allow_other_users_notification(self):
+        other_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            f"/api/notifications/{other_notification.id}/mark-unread/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        other_notification.refresh_from_db()
+
+        self.assertTrue(other_notification.is_read)
+        self.assertIsNotNone(other_notification.read_at)
+
+    def test_clear_read_notifications_deletes_only_authenticated_users_read_notifications(self):
+        first_read = Notification.objects.create(
+            recipient=self.user,
+            title="First read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+        second_read = Notification.objects.create(
+            recipient=self.user,
+            title="Second read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+        unread_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Unread notification",
+            is_read=False,
+        )
+        other_user_read = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other user read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete("/api/notifications/clear-read/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["deleted_count"], 2)
+
+        self.assertFalse(Notification.objects.filter(id=first_read.id).exists())
+        self.assertFalse(Notification.objects.filter(id=second_read.id).exists())
+
+        self.assertTrue(
+            Notification.objects.filter(id=unread_notification.id).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(id=other_user_read.id).exists()
+        )
+
+    def test_clear_read_notifications_requires_authentication(self):
+        response = self.client.delete("/api/notifications/clear-read/")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_notification_summary_requires_authentication(self):
         response = self.client.get("/api/notifications/summary/")
