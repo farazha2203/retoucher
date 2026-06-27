@@ -75,7 +75,7 @@ class EditorProfile(models.Model):
     average_delivery_hours = models.PositiveIntegerField(default=24)
 
     rating_average = models.DecimalField(
-        max_digits=3,
+        max_digits=4,
         decimal_places=2,
         default=0,
     )

@@ -5,8 +5,11 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from accounts.models import EditorProfile
+from orders.models import Order, OrderDelivery, OrderRating
 
 from rest_framework import status as drf_status
 from rest_framework.test import APITestCase
@@ -352,3 +355,198 @@ class OrderCommentsAndNotificationsAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, drf_status.HTTP_404_NOT_FOUND)
+
+class OrderRatingAndPublicationModelTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="rating-client",
+            password="pass12345",
+            role="client",
+        )
+        self.other_client = User.objects.create_user(
+            username="rating-other-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="rating-editor",
+            password="pass12345",
+            role="editor",
+        )
+        self.supervisor_user = User.objects.create_user(
+            username="rating-supervisor",
+            password="pass12345",
+            role="supervisor",
+        )
+
+        self.editor_profile = EditorProfile.objects.create(
+            user=self.editor_user,
+            display_name="Rating Editor",
+            base_price=1000,
+            average_delivery_hours=24,
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Rating Order",
+            description="Rating order description",
+            status=Order.Status.COMPLETED,
+        )
+        self.second_order = Order.objects.create(
+            client=self.other_client,
+            editor=self.editor_user,
+            title="Second Rating Order",
+            description="Second rating order description",
+            status=Order.Status.COMPLETED,
+        )
+
+    def test_client_rating_updates_editor_rating_average(self):
+        OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.client_user,
+            source=OrderRating.Source.CLIENT,
+            score=8,
+            comment="Great work",
+        )
+
+        self.editor_profile.refresh_from_db()
+
+        self.assertEqual(float(self.editor_profile.rating_average), 8.0)
+
+    def test_editor_rating_average_uses_only_client_ratings(self):
+        OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.supervisor_user,
+            source=OrderRating.Source.SUPERVISOR,
+            score=10,
+            comment="Internal quality score",
+        )
+
+        self.editor_profile.refresh_from_db()
+
+        self.assertEqual(float(self.editor_profile.rating_average), 0.0)
+
+        OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.client_user,
+            source=OrderRating.Source.CLIENT,
+            score=8,
+            comment="Client score",
+        )
+        OrderRating.objects.create(
+            order=self.second_order,
+            rated_by=self.other_client,
+            source=OrderRating.Source.CLIENT,
+            score=6,
+            comment="Second client score",
+        )
+
+        self.editor_profile.refresh_from_db()
+
+        self.assertEqual(float(self.editor_profile.rating_average), 7.0)
+
+    def test_updating_client_rating_recalculates_editor_rating_average(self):
+        rating = OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.client_user,
+            source=OrderRating.Source.CLIENT,
+            score=8,
+            comment="Initial score",
+        )
+
+        rating.score = 10
+        rating.save()
+
+        self.editor_profile.refresh_from_db()
+
+        self.assertEqual(float(self.editor_profile.rating_average), 10.0)
+
+    def test_deleting_client_rating_recalculates_editor_rating_average(self):
+        rating = OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.client_user,
+            source=OrderRating.Source.CLIENT,
+            score=8,
+            comment="Client score",
+        )
+
+        rating.delete()
+
+        self.editor_profile.refresh_from_db()
+
+        self.assertEqual(float(self.editor_profile.rating_average), 0.0)
+
+    def test_order_delivery_publication_request_and_approval_flow(self):
+        delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "delivery.jpg",
+                b"fake-image-content",
+                content_type="image/jpeg",
+            ),
+            note="Final delivery",
+        )
+
+        self.assertEqual(
+            delivery.publication_status,
+            OrderDelivery.PublicationStatus.PRIVATE,
+        )
+        self.assertFalse(delivery.is_public)
+
+        delivery.request_publication(self.editor_user)
+        delivery.refresh_from_db()
+
+        self.assertEqual(
+            delivery.publication_status,
+            OrderDelivery.PublicationStatus.REQUESTED,
+        )
+        self.assertEqual(delivery.publication_requested_by, self.editor_user)
+        self.assertIsNotNone(delivery.publication_requested_at)
+        self.assertFalse(delivery.is_public)
+
+        delivery.approve_publication(
+            reviewed_by=self.client_user,
+            note="Approved by owner",
+        )
+        delivery.refresh_from_db()
+
+        self.assertEqual(
+            delivery.publication_status,
+            OrderDelivery.PublicationStatus.APPROVED,
+        )
+        self.assertEqual(delivery.publication_reviewed_by, self.client_user)
+        self.assertIsNotNone(delivery.publication_reviewed_at)
+        self.assertEqual(delivery.publication_note, "Approved by owner")
+        self.assertTrue(delivery.is_public)
+
+    def test_order_delivery_publication_rejection_flow(self):
+        delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "delivery-rejected.jpg",
+                b"fake-image-content",
+                content_type="image/jpeg",
+            ),
+            note="Final delivery",
+        )
+
+        delivery.request_publication(self.editor_user)
+        delivery.reject_publication(
+            reviewed_by=self.client_user,
+            note="Do not publish this work",
+        )
+        delivery.refresh_from_db()
+
+        self.assertEqual(
+            delivery.publication_status,
+            OrderDelivery.PublicationStatus.REJECTED,
+        )
+        self.assertEqual(delivery.publication_reviewed_by, self.client_user)
+        self.assertIsNotNone(delivery.publication_reviewed_at)
+        self.assertEqual(delivery.publication_note, "Do not publish this work")
+        self.assertFalse(delivery.is_public)

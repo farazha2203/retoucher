@@ -1,6 +1,9 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Avg
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -63,6 +66,12 @@ class Order(models.Model):
 
 
 class OrderDelivery(models.Model):
+    class PublicationStatus(models.TextChoices):
+        PRIVATE = "private", "Private"
+        REQUESTED = "requested", "Requested"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
     order = models.ForeignKey(
         Order,
         on_delete=models.CASCADE,
@@ -84,12 +93,94 @@ class OrderDelivery(models.Model):
     uploaded_at = models.DateTimeField(
         auto_now_add=True,
     )
+    publication_status = models.CharField(
+        max_length=32,
+        choices=PublicationStatus.choices,
+        default=PublicationStatus.PRIVATE,
+    )
+    publication_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="requested_delivery_publications",
+        blank=True,
+        null=True,
+    )
+    publication_requested_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+    publication_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_delivery_publications",
+        blank=True,
+        null=True,
+    )
+    publication_reviewed_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+    publication_note = models.TextField(
+        blank=True,
+    )
 
     class Meta:
         ordering = ("-uploaded_at",)
 
+    @property
+    def is_public(self):
+        return self.publication_status == self.PublicationStatus.APPROVED
+
+    def request_publication(self, requested_by):
+        self.publication_status = self.PublicationStatus.REQUESTED
+        self.publication_requested_by = requested_by
+        self.publication_requested_at = timezone.now()
+        self.publication_reviewed_by = None
+        self.publication_reviewed_at = None
+        self.publication_note = ""
+        self.save(
+            update_fields=[
+                "publication_status",
+                "publication_requested_by",
+                "publication_requested_at",
+                "publication_reviewed_by",
+                "publication_reviewed_at",
+                "publication_note",
+            ]
+        )
+
+    def approve_publication(self, reviewed_by, note=""):
+        self.publication_status = self.PublicationStatus.APPROVED
+        self.publication_reviewed_by = reviewed_by
+        self.publication_reviewed_at = timezone.now()
+        self.publication_note = note.strip() if note else ""
+        self.save(
+            update_fields=[
+                "publication_status",
+                "publication_reviewed_by",
+                "publication_reviewed_at",
+                "publication_note",
+            ]
+        )
+
+    def reject_publication(self, reviewed_by, note=""):
+        self.publication_status = self.PublicationStatus.REJECTED
+        self.publication_reviewed_by = reviewed_by
+        self.publication_reviewed_at = timezone.now()
+        self.publication_note = note.strip() if note else ""
+        self.save(
+            update_fields=[
+                "publication_status",
+                "publication_reviewed_by",
+                "publication_reviewed_at",
+                "publication_note",
+            ]
+        )
+
     def __str__(self):
         return f"Delivery for order #{self.order_id}"
+    
+    
 
 
 class OrderRevision(models.Model):
@@ -139,6 +230,11 @@ class OrderRevision(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+        update_editor_rating_for_order(self.order_id)
+
+        if previous_order_id and previous_order_id != self.order_id:
+            update_editor_rating_for_order(previous_order_id)
 
     def __str__(self):
         return f"{self.source} revision for order #{self.order_id}"
@@ -224,8 +320,24 @@ class OrderRating(models.Model):
         
 
     def save(self, *args, **kwargs):
+        previous_order_id = None
+
+        if self.pk:
+            previous_order_id = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("order_id", flat=True)
+                .first()
+            )
+
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+        update_editor_rating_for_order(self.order_id)
+
+        if previous_order_id and previous_order_id != self.order_id:
+            update_editor_rating_for_order(previous_order_id)
 
     def __str__(self):
         return f"{self.source} rating {self.score}/10 for order #{self.order_id}"
@@ -610,3 +722,39 @@ class OrderNotification(models.Model):
 
     def __str__(self):
         return f"Notification #{self.pk} for {self.recipient_id}"
+
+
+def update_editor_rating_for_order(order_id):
+    order = (
+        Order.objects.filter(pk=order_id)
+        .select_related("editor")
+        .first()
+    )
+
+    if order is None or order.editor_id is None:
+        return
+
+    from accounts.models import EditorProfile
+
+    editor_profile = EditorProfile.objects.filter(user=order.editor).first()
+
+    if editor_profile is None:
+        return
+
+    rating_average = (
+        OrderRating.objects.filter(
+            order__editor=order.editor,
+            source=OrderRating.Source.CLIENT,
+        )
+        .aggregate(average=Avg("score"))
+        .get("average")
+    )
+
+    editor_profile.rating_average = rating_average or 0
+    editor_profile.save(update_fields=["rating_average"])
+
+
+@receiver(post_delete, sender=OrderRating)
+def update_editor_rating_after_order_rating_delete(sender, instance, **kwargs):
+    update_editor_rating_for_order(instance.order_id)
+    
