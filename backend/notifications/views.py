@@ -1,9 +1,10 @@
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
 
 from .models import Notification
 from .serializers import NotificationSerializer
@@ -27,6 +28,7 @@ class NotificationViewSet(
         is_read = self.request.query_params.get("is_read")
         notification_type = self.request.query_params.get("notification_type")
         priority = self.request.query_params.get("priority")
+        search = self.request.query_params.get("search")
 
         if is_read is not None:
             normalized_is_read = is_read.lower()
@@ -41,6 +43,11 @@ class NotificationViewSet(
 
         if priority:
             queryset = queryset.filter(priority=priority)
+
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search)
+            )
 
         return queryset
     

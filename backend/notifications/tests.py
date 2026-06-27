@@ -1044,6 +1044,106 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_notification_list_can_search_by_title(self):
+        matching_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Proposal accepted for beauty retouch",
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            title="Order payment received",
+        )
+        Notification.objects.create(
+            recipient=self.other_user,
+            title="Proposal accepted for other user",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/?search=proposal")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], matching_notification.id)
+
+    def test_notification_list_search_is_case_insensitive(self):
+        matching_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Image Uploaded Successfully",
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            title="Order payment received",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/?search=uploaded")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], matching_notification.id)
+
+    def test_notification_list_can_combine_search_with_existing_filters(self):
+        matching_notification = Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Proposal accepted",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.NORMAL,
+            title="Proposal accepted normal priority",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            priority=Notification.Priority.HIGH,
+            title="Proposal accepted system",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Proposal accepted read",
+            is_read=True,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Different title",
+            is_read=False,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/"
+            "?search=proposal"
+            "&is_read=false"
+            f"&notification_type={Notification.Type.PROPOSAL}"
+            f"&priority={Notification.Priority.HIGH}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], matching_notification.id)
+
 
 
 
