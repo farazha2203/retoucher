@@ -70,6 +70,30 @@ class NotificationViewSet(
             },
             status=status.HTTP_200_OK,
         )
+    
+    @action(detail=False, methods=["post"], url_path="delete-selected")
+    def delete_selected(self, request):
+        notification_ids = request.data.get("ids", [])
+
+        if not isinstance(notification_ids, list):
+            return Response(
+                {
+                    "detail": "ids must be a list.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        deleted_count, _ = Notification.objects.filter(
+            recipient=request.user,
+            id__in=notification_ids,
+        ).delete()
+
+        return Response(
+            {
+                "deleted_count": deleted_count,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["post"], url_path="mark-selected-unread")
     def mark_selected_unread(self, request):

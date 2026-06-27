@@ -211,6 +211,8 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(response.data["by_priority"][Notification.Priority.NORMAL], 3)
         self.assertEqual(response.data["by_priority"][Notification.Priority.HIGH], 1)
 
+    
+
     def test_mark_selected_notifications_as_read_updates_only_owned_notifications(self):
         first_notification = Notification.objects.create(
             recipient=self.user,
@@ -837,6 +839,91 @@ class NotificationAPITests(APITestCase):
 
         self.assertEqual(results[0]["id"], second.id)
         self.assertEqual(results[1]["id"], first.id)
+
+    def test_delete_selected_notifications_deletes_only_owned_notifications(self):
+        first_notification = Notification.objects.create(
+            recipient=self.user,
+            title="First notification",
+        )
+        second_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Second notification",
+        )
+        other_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other user notification",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/delete-selected/",
+            {
+                "ids": [
+                    first_notification.id,
+                    second_notification.id,
+                    other_notification.id,
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["deleted_count"], 2)
+
+        self.assertFalse(
+            Notification.objects.filter(id=first_notification.id).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(id=second_notification.id).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(id=other_notification.id).exists()
+        )
+
+    def test_delete_selected_notifications_rejects_non_list_ids(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/delete-selected/",
+            {
+                "ids": "not-a-list",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delete_selected_notifications_with_empty_ids_returns_zero(self):
+        Notification.objects.create(
+            recipient=self.user,
+            title="User notification",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/delete-selected/",
+            {
+                "ids": [],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["deleted_count"], 0)
+        self.assertEqual(Notification.objects.filter(recipient=self.user).count(), 1)
+
+    def test_delete_selected_notifications_requires_authentication(self):
+        response = self.client.post(
+            "/api/notifications/delete-selected/",
+            {
+                "ids": [],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 
