@@ -1341,3 +1341,37 @@ class ProjectRequestAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_can_get_latest_project_request_activities(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Latest activity request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+            metadata={"source": "test"},
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get("/api/projects/requests/latest-activities/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["action"], ProjectRequestActivity.Action.CREATED)
+        self.assertEqual(response.data[0]["project_request"], project_request.id)
+        self.assertEqual(response.data[0]["project_request_title"], project_request.title)
+
+    def test_client_cannot_get_latest_project_request_activities(self):
+        self.client.force_authenticate(user=self.client_user)
+
+        response = self.client.get("/api/projects/requests/latest-activities/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

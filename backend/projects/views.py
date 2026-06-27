@@ -668,3 +668,47 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
+    
+    @decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="latest-activities",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def latest_activities(self, request):
+        limit = request.query_params.get("limit", 20)
+
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = 20
+
+        limit = max(1, min(limit, 100))
+
+        activities = (
+            ProjectRequestActivity.objects.select_related(
+                "project_request",
+                "actor",
+            )
+            .order_by("-created_at")[:limit]
+        )
+
+        data = [
+            {
+                "id": activity.id,
+                "project_request": activity.project_request_id,
+                "project_request_title": activity.project_request.title,
+                "actor": activity.actor_id,
+                "actor_username": activity.actor.username if activity.actor else None,
+                "action": activity.action,
+                "message": activity.message,
+                "metadata": activity.metadata,
+                "created_at": activity.created_at,
+            }
+            for activity in activities
+        ]
+
+        return response.Response(
+            data,
+            status=status.HTTP_200_OK,
+        )
