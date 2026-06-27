@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
@@ -76,6 +75,7 @@ LOCAL_APPS = [
     "orders",
     "catalog",
     "projects",
+    "notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
