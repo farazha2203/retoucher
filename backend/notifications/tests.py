@@ -211,6 +211,127 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(response.data["by_priority"][Notification.Priority.NORMAL], 3)
         self.assertEqual(response.data["by_priority"][Notification.Priority.HIGH], 1)
 
+    def test_mark_selected_notifications_as_read_updates_only_owned_notifications(self):
+        first_notification = Notification.objects.create(
+            recipient=self.user,
+            title="First unread notification",
+            is_read=False,
+        )
+        second_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Second unread notification",
+            is_read=False,
+        )
+        other_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other unread notification",
+            is_read=False,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/mark-selected-read/",
+            {
+                "ids": [
+                    first_notification.id,
+                    second_notification.id,
+                    other_notification.id,
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["updated_count"], 2)
+
+        first_notification.refresh_from_db()
+        second_notification.refresh_from_db()
+        other_notification.refresh_from_db()
+
+        self.assertTrue(first_notification.is_read)
+        self.assertIsNotNone(first_notification.read_at)
+
+        self.assertTrue(second_notification.is_read)
+        self.assertIsNotNone(second_notification.read_at)
+
+        self.assertFalse(other_notification.is_read)
+        self.assertIsNone(other_notification.read_at)
+
+    def test_mark_selected_notifications_as_unread_updates_only_owned_notifications(self):
+        first_notification = Notification.objects.create(
+            recipient=self.user,
+            title="First read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+        second_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Second read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+        other_notification = Notification.objects.create(
+            recipient=self.other_user,
+            title="Other read notification",
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/mark-selected-unread/",
+            {
+                "ids": [
+                    first_notification.id,
+                    second_notification.id,
+                    other_notification.id,
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["updated_count"], 2)
+
+        first_notification.refresh_from_db()
+        second_notification.refresh_from_db()
+        other_notification.refresh_from_db()
+
+        self.assertFalse(first_notification.is_read)
+        self.assertIsNone(first_notification.read_at)
+
+        self.assertFalse(second_notification.is_read)
+        self.assertIsNone(second_notification.read_at)
+
+        self.assertTrue(other_notification.is_read)
+        self.assertIsNotNone(other_notification.read_at)
+
+    def test_mark_selected_read_rejects_non_list_ids(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/notifications/mark-selected-read/",
+            {
+                "ids": "not-a-list",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_mark_selected_unread_requires_authentication(self):
+        response = self.client.post(
+            "/api/notifications/mark-selected-unread/",
+            {
+                "ids": [],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_mark_notification_as_unread_marks_only_owned_notification_unread(self):
         notification = Notification.objects.create(
             recipient=self.user,
