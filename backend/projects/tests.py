@@ -967,3 +967,147 @@ class ProjectRequestAPITests(TestCase):
 
         order_image = OrderImage.objects.first()
         self.assertEqual(order_image.note, "Original image")
+
+    def test_staff_can_managed_assign_editor_to_project_request(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Managed request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+                "editor_note": "Assigned by support for natural beauty retouch.",
+                "support_note": "Editor selected based on skill and availability.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ProjectProposal.objects.count(), 1)
+
+        proposal = ProjectProposal.objects.first()
+        project_request.refresh_from_db()
+
+        self.assertEqual(proposal.status, ProjectProposal.Status.ACCEPTED_BY_CLIENT)
+        self.assertEqual(proposal.editor, self.editor_profile)
+        self.assertEqual(proposal.proposed_price, 400000)
+        self.assertEqual(proposal.editor_fee, 280000)
+
+        self.assertEqual(project_request.status, ProjectRequest.Status.EDITOR_SELECTED)
+        self.assertEqual(project_request.target_editor, self.editor_profile)
+        self.assertIn("Editor selected", project_request.support_note)
+
+    def test_client_cannot_managed_assign_editor(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Managed request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ProjectProposal.objects.count(), 0)
+
+    def test_managed_assign_requires_matching_editor_skill(self):
+        other_category = EditCategory.objects.create(
+            title="Product Photo",
+            slug="product-photo-managed",
+            sort_order=2,
+        )
+        other_style = EditStyle.objects.create(
+            category=other_category,
+            title="Product Cleanup",
+            slug="product-cleanup-managed",
+            min_price=50000,
+            max_price=250000,
+            suggested_price=120000,
+            estimated_delivery_hours=12,
+        )
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Managed product request",
+            edit_style=other_style,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("editor", response.data)
+        self.assertEqual(ProjectProposal.objects.count(), 0)
+
+    def test_managed_assign_can_be_converted_to_order(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Managed request to convert",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+        assign_response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+                "support_note": "Ready to convert.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(assign_response.status_code, status.HTTP_200_OK)
+
+        self.authenticate_client()
+        convert_response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(convert_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Order.objects.count(), 1)
+
+        order = Order.objects.first()
+        project_request.refresh_from_db()
+
+        self.assertEqual(order.client, self.client_user)
+        self.assertEqual(order.editor, self.editor_user)
+        self.assertEqual(order.status, Order.Status.ASSIGNED)
+        self.assertEqual(project_request.status, ProjectRequest.Status.CONVERTED_TO_ORDER)

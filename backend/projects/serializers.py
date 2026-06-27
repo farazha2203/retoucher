@@ -843,3 +843,110 @@ class ConvertProjectRequestToOrderSerializer(serializers.Serializer):
         )
 
         return order
+    
+class ManagedAssignProjectRequestSerializer(serializers.Serializer):
+    editor = serializers.IntegerField()
+    proposed_price = serializers.IntegerField(min_value=1)
+    editor_fee = serializers.IntegerField(min_value=0, required=False, default=0)
+    estimated_delivery_hours = serializers.IntegerField(min_value=1)
+    editor_note = serializers.CharField(required=False, allow_blank=True)
+    support_note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        from accounts.models import EditorProfile
+
+        project_request = self.context["project_request"]
+
+        if project_request.request_type != ProjectRequest.RequestType.MANAGED_ORDER:
+            raise serializers.ValidationError(
+                "This action is only available for managed order requests."
+            )
+
+        if project_request.status not in [
+            ProjectRequest.Status.SUBMITTED,
+            ProjectRequest.Status.UNDER_REVIEW,
+            ProjectRequest.Status.EDITOR_SELECTED,
+        ]:
+            raise serializers.ValidationError(
+                "This managed order request cannot be assigned in its current status."
+            )
+
+        if project_request.converted_order_id is not None:
+            raise serializers.ValidationError(
+                "This project request has already been converted to an order."
+            )
+
+        editor_id = attrs.get("editor")
+
+        try:
+            editor_profile = EditorProfile.objects.get(id=editor_id)
+        except EditorProfile.DoesNotExist:
+            raise serializers.ValidationError(
+                {"editor": "Editor profile not found."}
+            )
+
+        if not editor_profile.is_available:
+            raise serializers.ValidationError(
+                {"editor": "Selected editor is not available."}
+            )
+
+        if not editor_profile.skills.filter(id=project_request.edit_style_id).exists():
+            raise serializers.ValidationError(
+                {"editor": "Selected editor does not support this edit style."}
+            )
+
+        attrs["editor_profile"] = editor_profile
+
+        return attrs
+
+    def save(self, **kwargs):
+        project_request = self.context["project_request"]
+        request = self.context["request"]
+
+        editor_profile = self.validated_data["editor_profile"]
+        proposed_price = self.validated_data["proposed_price"]
+        editor_fee = self.validated_data.get("editor_fee", 0)
+        estimated_delivery_hours = self.validated_data["estimated_delivery_hours"]
+        editor_note = self.validated_data.get("editor_note", "")
+        support_note = self.validated_data.get("support_note", "")
+
+        # Reject previous submitted/accepted proposals for this managed request.
+        ProjectProposal.objects.filter(
+            project_request=project_request,
+        ).exclude(
+            editor=editor_profile,
+        ).update(
+            status=ProjectProposal.Status.REJECTED_BY_CLIENT,
+        )
+
+        proposal, _ = ProjectProposal.objects.update_or_create(
+            project_request=project_request,
+            editor=editor_profile,
+            defaults={
+                "status": ProjectProposal.Status.ACCEPTED_BY_CLIENT,
+                "proposed_price": proposed_price,
+                "editor_fee": editor_fee,
+                "estimated_delivery_hours": estimated_delivery_hours,
+                "editor_note": editor_note,
+                "client_note": "Assigned by support/admin.",
+                "accepted_at": timezone.now(),
+                "is_visible_to_client": True,
+            },
+        )
+
+        project_request.target_editor = editor_profile
+        project_request.status = ProjectRequest.Status.EDITOR_SELECTED
+
+        if support_note:
+            project_request.support_note = support_note
+
+        project_request.save(
+            update_fields=[
+                "target_editor",
+                "status",
+                "support_note",
+                "updated_at",
+            ]
+        )
+
+        return proposal

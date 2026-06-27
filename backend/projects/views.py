@@ -6,6 +6,7 @@ from .serializers import (
     ConvertProjectRequestToOrderSerializer,
     DirectEditorDeclineSerializer,
     DirectEditorProposalCreateSerializer,
+    ManagedAssignProjectRequestSerializer,
     ProjectProposalSerializer,
     ProjectRequestCreateSerializer,
     ProjectRequestDetailSerializer,
@@ -104,6 +105,8 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             return ReviewSampleProposalSerializer
         if self.action == "convert_to_order":
             return ConvertProjectRequestToOrderSerializer
+        if self.action == "managed_assign":
+            return ManagedAssignProjectRequestSerializer
         return ProjectRequestListSerializer
 
     def perform_create(self, serializer):
@@ -392,4 +395,33 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
                 "deadline": order.deadline,
             },
             status=status.HTTP_201_CREATED,
+        )
+    
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="managed-assign",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def managed_assign(self, request, pk=None):
+        project_request = self.get_object()
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
         )
