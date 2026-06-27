@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ProjectProposal, ProjectRequest, ProjectRequestImage
+from .models import ProjectProposal, ProjectRequest, ProjectRequestActivity, ProjectRequestImage
 
 
 class ProjectProposalInline(admin.TabularInline):
@@ -37,6 +37,24 @@ class ProjectRequestImageInline(admin.TabularInline):
     )
     readonly_fields = ("uploaded_at",)
 
+class ProjectRequestActivityInline(admin.TabularInline):
+    model = ProjectRequestActivity
+    extra = 0
+    fields = (
+        "actor",
+        "action",
+        "message",
+        "metadata",
+        "created_at",
+    )
+    readonly_fields = (
+        "actor",
+        "action",
+        "message",
+        "metadata",
+        "created_at",
+    )
+    can_delete = False
 
 @admin.register(ProjectRequest)
 class ProjectRequestAdmin(admin.ModelAdmin):
@@ -75,7 +93,7 @@ class ProjectRequestAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    inlines = [ProjectRequestImageInline, ProjectProposalInline]
+    inlines = [ProjectRequestImageInline, ProjectProposalInline, ProjectRequestActivityInline]
     ordering = ("-created_at",)
 
 
@@ -130,3 +148,32 @@ class ProjectProposalAdmin(admin.ModelAdmin):
         "accepted_at",
     )
     ordering = ("-submitted_at",)
+
+@admin.register(ProjectRequestActivity)
+class ProjectRequestActivityAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "project_request",
+        "actor",
+        "action",
+        "created_at",
+    )
+    list_filter = (
+        "action",
+        "created_at",
+    )
+    search_fields = (
+        "project_request__title",
+        "actor__username",
+        "actor__email",
+        "message",
+    )
+    readonly_fields = (
+        "project_request",
+        "actor",
+        "action",
+        "message",
+        "metadata",
+        "created_at",
+    )
+    ordering = ("-created_at",)

@@ -7,7 +7,12 @@ from django.db import models, transaction
 from accounts.serializers_editor import EditorProfileListSerializer
 from catalog.serializers import EditPackageSerializer, EditStyleSerializer
 
-from .models import ProjectProposal, ProjectRequest, ProjectRequestImage
+from .models import (
+    ProjectProposal,
+    ProjectRequest,
+    ProjectRequestActivity,
+    ProjectRequestImage,
+)
 
 
 class ProjectRequestImageSerializer(serializers.ModelSerializer):
@@ -122,7 +127,9 @@ class ProjectRequestListSerializer(serializers.ModelSerializer):
 class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
     edit_style_detail = EditStyleSerializer(source="edit_style", read_only=True)
     package_detail = EditPackageSerializer(source="package", read_only=True)
-    target_editor_detail = EditorProfileListSerializer(source="target_editor", read_only=True)
+    target_editor_detail = EditorProfileListSerializer(
+        source="target_editor", read_only=True
+    )
     images = ProjectRequestImageSerializer(many=True, read_only=True)
     proposals = serializers.SerializerMethodField()
 
@@ -150,7 +157,9 @@ class ProjectRequestDetailSerializer(ProjectRequestListSerializer):
 
     def get_proposals(self, obj):
         request = self.context.get("request")
-        proposals = obj.proposals.select_related("editor", "editor__user").order_by("-submitted_at")
+        proposals = obj.proposals.select_related("editor", "editor__user").order_by(
+            "-submitted_at"
+        )
 
         if request is None or not request.user.is_authenticated:
             proposals = proposals.none()
@@ -993,3 +1002,24 @@ class ManagedAssignProjectRequestSerializer(serializers.Serializer):
         )
 
         return proposal
+
+
+class ProjectRequestActivitySerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(
+        source="actor.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = ProjectRequestActivity
+        fields = (
+            "id",
+            "project_request",
+            "actor",
+            "actor_username",
+            "action",
+            "message",
+            "metadata",
+            "created_at",
+        )
+        read_only_fields = fields

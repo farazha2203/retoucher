@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+
 from accounts.models import EditorProfile
 from catalog.models import EditPackage, EditStyle
 
@@ -201,3 +202,46 @@ class ProjectProposal(models.Model):
 
     def __str__(self):
         return f"{self.project_request_id} - {self.editor}"
+    
+class ProjectRequestActivity(models.Model):
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        IMAGE_UPLOADED = "image_uploaded", "Image uploaded"
+        DIRECT_PROPOSAL_SUBMITTED = "direct_proposal_submitted", "Direct proposal submitted"
+        DIRECT_DECLINED = "direct_declined", "Direct declined"
+        PUBLIC_PROPOSAL_SUBMITTED = "public_proposal_submitted", "Public proposal submitted"
+        SAMPLE_PROPOSAL_SUBMITTED = "sample_proposal_submitted", "Sample proposal submitted"
+        SAMPLE_REVIEWED = "sample_reviewed", "Sample reviewed"
+        PROPOSAL_SELECTED = "proposal_selected", "Proposal selected"
+        CONVERTED_TO_ORDER = "converted_to_order", "Converted to order"
+        MANAGED_ASSIGNED = "managed_assigned", "Managed assigned"
+
+    project_request = models.ForeignKey(
+        ProjectRequest,
+        on_delete=models.CASCADE,
+        related_name="activities",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_request_activities",
+    )
+    action = models.CharField(
+        max_length=80,
+        choices=Action.choices,
+    )
+    message = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["project_request", "-created_at"]),
+            models.Index(fields=["action"]),
+        ]
+
+    def __str__(self):
+        return f"{self.project_request_id} - {self.action}"

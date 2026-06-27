@@ -1,7 +1,10 @@
 from rest_framework import decorators, permissions, response, status, viewsets
-from .models import ProjectProposal, ProjectRequest
+from .models import ProjectProposal, ProjectRequest, ProjectRequestActivity
 from django.db import models
-from .permissions import IsProjectRequestOwnerOrStaff, IsProjectRequestParticipantOrStaff
+from .permissions import (
+    IsProjectRequestOwnerOrStaff,
+    IsProjectRequestParticipantOrStaff,
+)
 from .serializers import (
     ConvertProjectRequestToOrderSerializer,
     DirectEditorDeclineSerializer,
@@ -17,11 +20,13 @@ from .serializers import (
     ReviewSampleProposalSerializer,
     SampleProposalCreateSerializer,
     SelectProjectProposalSerializer,
+    ProjectRequestActivitySerializer,
 )
 
 
 class ProjectRequestViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsProjectRequestOwnerOrStaff]
+
     def get_permissions(self):
         if self.action == "retrieve":
             return [
@@ -33,6 +38,32 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
 
     def get_editor_profile(self):
         return getattr(self.request.user, "editor_profile", None)
+
+    def log_project_request_activity(
+        self,
+        project_request,
+        action,
+        message="",
+        metadata=None,
+    ):
+        user = self.request.user
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=user if user and user.is_authenticated else None,
+            action=action,
+            message=message,
+            metadata=metadata or {},
+        )
+
+    def log_activity(self, project_request, action, message="", metadata=None):
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.request.user if self.request.user.is_authenticated else None,
+            action=action,
+            message=message,
+            metadata=metadata or {},
+        )
 
     def get_queryset(self):
         queryset = (
@@ -115,10 +146,46 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             return ConvertProjectRequestToOrderSerializer
         if self.action == "managed_assign":
             return ManagedAssignProjectRequestSerializer
+        if self.action == "activity":
+            return ProjectRequestActivitySerializer
         return ProjectRequestListSerializer
 
     def perform_create(self, serializer):
-        serializer.save()
+        project_request = serializer.save()
+
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+            metadata={
+                "request_type": project_request.request_type,
+                "status": project_request.status,
+            },
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["get"],
+        url_path="activity",
+        permission_classes=[
+            permissions.IsAuthenticated,
+            IsProjectRequestParticipantOrStaff,
+        ],
+    )
+    def activity(self, request, pk=None):
+        project_request = self.get_object()
+        activities = project_request.activities.select_related("actor").all()
+
+        serializer = self.get_serializer(
+            activities,
+            many=True,
+            context={"request": request},
+        )
+
+        return response.Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
 
     @decorators.action(
         detail=True,
@@ -137,6 +204,12 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         image = serializer.save()
+        self.log_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.IMAGE_UPLOADED,
+            message="Project request image uploaded.",
+            metadata={"image_id": image.id},
+        )
 
         output_serializer = ProjectRequestImageSerializer(
             image,
@@ -174,6 +247,16 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_PROPOSAL_SUBMITTED,
+            message="Direct proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+                "proposed_price": str(proposal.proposed_price),
+            },
+        )
 
         output_serializer = ProjectProposalSerializer(
             proposal,
@@ -211,6 +294,15 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_DECLINED,
+            message="Direct project request declined by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
 
         output_serializer = ProjectProposalSerializer(
             proposal,
@@ -248,6 +340,16 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+            message="Public proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+                "proposed_price": str(proposal.proposed_price),
+            },
+        )
 
         output_serializer = ProjectProposalSerializer(
             proposal,
@@ -287,6 +389,16 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         selected_proposal = serializer.save()
 
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+            message="Project proposal selected by client.",
+            metadata={
+                "proposal_id": selected_proposal.id,
+                "editor_id": selected_proposal.editor_id,
+            },
+        )
+
         output_serializer = ProjectProposalSerializer(
             selected_proposal,
             context={"request": request},
@@ -296,7 +408,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
-    
+
     @decorators.action(
         detail=True,
         methods=["post"],
@@ -323,6 +435,15 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_PROPOSAL_SUBMITTED,
+            message="Sample proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
 
         output_serializer = ProjectProposalSerializer(
             proposal,
@@ -362,6 +483,17 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         reviewed_proposal = serializer.save()
 
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+            message="Sample proposal reviewed by staff.",
+            metadata={
+                "proposal_id": reviewed_proposal.id,
+                "status": reviewed_proposal.status,
+                "supervisor_score": reviewed_proposal.supervisor_score,
+            },
+        )
+
         output_serializer = ProjectProposalSerializer(
             reviewed_proposal,
             context={"request": request},
@@ -371,7 +503,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
-    
+
     @decorators.action(
         detail=True,
         methods=["post"],
@@ -390,6 +522,14 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+            message="Project request converted to order.",
+            metadata={
+                "order_id": order.id,
+            },
+        )
 
         return response.Response(
             {
@@ -404,7 +544,35 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
-    
+
+    @decorators.action(
+        detail=True,
+        methods=["get"],
+        url_path="activities",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def activities(self, request, pk=None):
+        project_request = self.get_object()
+
+        activities = project_request.activities.select_related("actor").order_by(
+            "-created_at"
+        )
+
+        data = [
+            {
+                "id": activity.id,
+                "actor": activity.actor_id,
+                "actor_username": activity.actor.username if activity.actor else None,
+                "action": activity.action,
+                "message": activity.message,
+                "metadata": activity.metadata,
+                "created_at": activity.created_at,
+            }
+            for activity in activities
+        ]
+
+        return response.Response(data, status=status.HTTP_200_OK)
+
     @decorators.action(
         detail=False,
         methods=["get"],
@@ -446,7 +614,9 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
                 "edit_style": item.edit_style_id,
                 "created_at": item.created_at,
             }
-            for item in project_requests.select_related("client", "edit_style").order_by("-created_at")[:10]
+            for item in project_requests.select_related(
+                "client", "edit_style"
+            ).order_by("-created_at")[:10]
         ]
 
         return response.Response(
@@ -460,7 +630,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @decorators.action(
         detail=True,
         methods=["post"],
@@ -479,6 +649,15 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            message="Project request managed assignment completed.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
 
         output_serializer = ProjectProposalSerializer(
             proposal,

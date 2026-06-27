@@ -7,7 +7,7 @@ from orders.models import Order, OrderActivityLog, OrderImage, OrderStatusHistor
 
 from accounts.models import EditorProfile
 from catalog.models import EditCategory, EditPackage, EditStyle
-from .models import ProjectProposal, ProjectRequest
+from .models import ProjectProposal, ProjectRequest, ProjectRequestActivity, ProjectRequestImage
 
 
 class ProjectRequestAPITests(TestCase):
@@ -1295,5 +1295,49 @@ class ProjectRequestAPITests(TestCase):
         self.client.force_authenticate(user=self.client_user)
 
         response = self.client.get("/api/projects/requests/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_can_get_project_request_activities(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Activity log request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            f"/api/projects/requests/{project_request.id}/activities/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["action"], ProjectRequestActivity.Action.CREATED)
+        self.assertEqual(response.data[0]["actor"], self.client_user.id)
+
+    def test_client_cannot_get_project_request_activities(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Private activity log request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.client_user)
+
+        response = self.client.get(
+            f"/api/projects/requests/{project_request.id}/activities/"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
