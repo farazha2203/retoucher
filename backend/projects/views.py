@@ -677,6 +677,9 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
     )
     def latest_activities(self, request):
         limit = request.query_params.get("limit", 20)
+        action = request.query_params.get("action")
+        project_request_id = request.query_params.get("project_request")
+        actor_id = request.query_params.get("actor")
 
         try:
             limit = int(limit)
@@ -685,13 +688,21 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
 
         limit = max(1, min(limit, 100))
 
-        activities = (
-            ProjectRequestActivity.objects.select_related(
-                "project_request",
-                "actor",
-            )
-            .order_by("-created_at")[:limit]
-        )
+        activities = ProjectRequestActivity.objects.select_related(
+            "project_request",
+            "actor",
+        ).order_by("-created_at")
+
+        if action:
+            activities = activities.filter(action=action)
+
+        if project_request_id:
+            activities = activities.filter(project_request_id=project_request_id)
+
+        if actor_id:
+            activities = activities.filter(actor_id=actor_id)
+
+        activities = activities[:limit]
 
         data = [
             {

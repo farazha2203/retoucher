@@ -1375,3 +1375,85 @@ class ProjectRequestAPITests(TestCase):
         response = self.client.get("/api/projects/requests/latest-activities/")
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_staff_can_filter_latest_project_request_activities_by_action(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Filtered latest activity request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+            metadata={"source": "test"},
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.staff_user,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            message="Managed assignment completed.",
+            metadata={"source": "test"},
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            "/api/projects/requests/latest-activities/",
+            {"action": ProjectRequestActivity.Action.MANAGED_ASSIGNED},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(
+            response.data[0]["action"],
+            ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+        )
+
+    def test_staff_can_filter_latest_project_request_activities_by_project_request(self):
+        first_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="First activity request",
+            edit_style=self.style,
+        )
+
+        second_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Second activity request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=first_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="First request created.",
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=second_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Second request created.",
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get(
+            "/api/projects/requests/latest-activities/",
+            {"project_request": second_request.id},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["project_request"], second_request.id)
+        self.assertEqual(response.data[0]["project_request_title"], second_request.title)
