@@ -1457,3 +1457,43 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["project_request"], second_request.id)
         self.assertEqual(response.data[0]["project_request_title"], second_request.title)
+
+    def test_dashboard_summary_includes_project_request_activity_stats(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Dashboard activity stats request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.staff_user,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            message="Managed assignment completed.",
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.get("/api/projects/requests/dashboard-summary/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("total_activities", response.data)
+        self.assertIn("activities_by_action", response.data)
+        self.assertGreaterEqual(response.data["total_activities"], 2)
+        self.assertEqual(
+            response.data["activities_by_action"][ProjectRequestActivity.Action.CREATED],
+            1,
+        )
+        self.assertEqual(
+            response.data["activities_by_action"][ProjectRequestActivity.Action.MANAGED_ASSIGNED],
+            1,
+        )

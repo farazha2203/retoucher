@@ -582,6 +582,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
     def dashboard_summary(self, request):
         project_requests = ProjectRequest.objects.all()
         proposals = ProjectProposal.objects.all()
+        activities = ProjectRequestActivity.objects.all()
 
         requests_by_status = {
             item["status"]: item["count"]
@@ -602,6 +603,13 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             for item in proposals.values("status")
             .annotate(count=models.Count("id"))
             .order_by("status")
+        }
+
+        activities_by_action = {
+            item["action"]: item["count"]
+            for item in activities.values("action")
+            .annotate(count=models.Count("id"))
+            .order_by("action")
         }
 
         latest_requests = [
@@ -627,6 +635,8 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
                 "requests_by_type": requests_by_type,
                 "proposals_by_status": proposals_by_status,
                 "latest_requests": latest_requests,
+                "total_activities": activities.count(),
+                "activities_by_action": activities_by_action,
             },
             status=status.HTTP_200_OK,
         )
@@ -668,7 +678,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             output_serializer.data,
             status=status.HTTP_200_OK,
         )
-    
+
     @decorators.action(
         detail=False,
         methods=["get"],
