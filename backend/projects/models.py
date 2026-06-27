@@ -91,7 +91,7 @@ class ProjectRequest(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ("-created_at", "-id")
         verbose_name = "Project request"
         verbose_name_plural = "Project requests"
 

@@ -555,7 +555,8 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         project_request = self.get_object()
 
         activities = project_request.activities.select_related("actor").order_by(
-            "-created_at"
+            "-created_at",
+            "-id",
         )
 
         data = [
@@ -624,7 +625,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
             }
             for item in project_requests.select_related(
                 "client", "edit_style"
-            ).order_by("-created_at")[:10]
+            ).order_by("-created_at", "-id")[:10]
         ]
 
         return response.Response(
@@ -701,7 +702,7 @@ class ProjectRequestViewSet(viewsets.ModelViewSet):
         activities = ProjectRequestActivity.objects.select_related(
             "project_request",
             "actor",
-        ).order_by("-created_at")
+        ).order_by("-created_at", "-id")
 
         if action:
             activities = activities.filter(action=action)

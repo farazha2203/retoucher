@@ -104,6 +104,287 @@ class ProjectRequestAPITests(TestCase):
         self.assertEqual(project_request.client, self.client_user)
         self.assertEqual(project_request.status, ProjectRequest.Status.SUBMITTED)
 
+
+    def test_public_proposal_activity_creates_client_notification(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Public proposal notification request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I can do this naturally.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        notification = Notification.objects.filter(
+            recipient=self.client_user,
+            notification_type=Notification.Type.PROPOSAL,
+            title="New proposal received",
+        ).first()
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.actor, self.editor_user)
+        self.assertEqual(notification.data["project_request_id"], project_request.id)
+        self.assertEqual(
+            notification.data["action"],
+            ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+        )
+        self.assertIn("proposal_id", notification.data)
+
+    def test_direct_declined_activity_creates_client_notification(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Direct decline notification request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-decline/",
+            {
+                "editor_note": "I am not available.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        notification = Notification.objects.filter(
+            recipient=self.client_user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Direct request declined",
+        ).first()
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.actor, self.editor_user)
+        self.assertEqual(notification.data["project_request_id"], project_request.id)
+        self.assertEqual(
+            notification.data["action"],
+            ProjectRequestActivity.Action.DIRECT_DECLINED,
+        )
+
+    def test_sample_proposal_submitted_activity_notifies_staff_users(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample submitted notification request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.editor_user,
+            action=ProjectRequestActivity.Action.SAMPLE_PROPOSAL_SUBMITTED,
+            message="Sample proposal submitted.",
+            metadata={
+                "proposal_id": proposal.id,
+            },
+        )
+
+        notification = Notification.objects.filter(
+            recipient=self.staff_user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Sample proposal needs review",
+        ).first()
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.actor, self.editor_user)
+        self.assertEqual(notification.data["project_request_id"], project_request.id)
+        self.assertEqual(notification.data["proposal_id"], proposal.id)
+        self.assertEqual(
+            notification.data["action"],
+            ProjectRequestActivity.Action.SAMPLE_PROPOSAL_SUBMITTED,
+        )
+
+    def test_sample_reviewed_activity_notifies_editor(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample reviewed notification request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=True,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.staff_user,
+            action=ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+            message="Sample reviewed.",
+            metadata={
+                "proposal_id": proposal.id,
+                "status": ProjectProposal.Status.UNDER_REVIEW,
+                "supervisor_score": 9,
+            },
+        )
+
+        notification = Notification.objects.filter(
+            recipient=self.editor_user,
+            notification_type=Notification.Type.PROPOSAL,
+            title="Your sample was reviewed",
+        ).first()
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.actor, self.staff_user)
+        self.assertEqual(notification.data["project_request_id"], project_request.id)
+        self.assertEqual(notification.data["proposal_id"], proposal.id)
+        self.assertEqual(notification.data["supervisor_score"], 9)
+        self.assertEqual(
+            notification.data["action"],
+            ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+        )
+
+    def test_proposal_selected_activity_notifies_editor(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Proposal selected notification request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=500000,
+            editor_fee=350000,
+            estimated_delivery_hours=48,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+            message="Proposal selected.",
+            metadata={
+                "proposal_id": proposal.id,
+            },
+        )
+
+        notification = Notification.objects.filter(
+            recipient=self.editor_user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Your proposal was selected",
+        ).first()
+
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.actor, self.client_user)
+        self.assertEqual(notification.data["project_request_id"], project_request.id)
+        self.assertEqual(notification.data["proposal_id"], proposal.id)
+        self.assertEqual(
+            notification.data["action"],
+            ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+        )
+
+    def test_converted_to_order_activity_notifies_editor_but_not_actor_client(self):
+        from notifications.models import Notification
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Converted order notification request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=500000,
+            editor_fee=350000,
+            estimated_delivery_hours=48,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+            message="Converted to order.",
+            metadata={
+                "proposal_id": proposal.id,
+                "order_id": 123,
+            },
+        )
+
+        editor_notification = Notification.objects.filter(
+            recipient=self.editor_user,
+            notification_type=Notification.Type.ORDER,
+            priority=Notification.Priority.HIGH,
+            title="Project converted to order",
+        ).first()
+
+        self.assertIsNotNone(editor_notification)
+        self.assertEqual(editor_notification.actor, self.client_user)
+        self.assertEqual(editor_notification.data["project_request_id"], project_request.id)
+        self.assertEqual(editor_notification.data["proposal_id"], proposal.id)
+        self.assertEqual(editor_notification.data["order_id"], 123)
+        self.assertEqual(
+            editor_notification.data["action"],
+            ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+        )
+
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.client_user,
+                notification_type=Notification.Type.ORDER,
+                title="Project converted to order",
+            ).exists()
+        )
+
     def test_direct_editor_request_requires_target_editor(self):
         self.authenticate_client()
 
