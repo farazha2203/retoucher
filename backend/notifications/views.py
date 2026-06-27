@@ -17,11 +17,31 @@ class NotificationViewSet(
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
-        return (
+        queryset = (
             Notification.objects.filter(recipient=self.request.user)
             .select_related("recipient", "actor")
             .order_by("-created_at", "-id")
         )
+
+        is_read = self.request.query_params.get("is_read")
+        notification_type = self.request.query_params.get("notification_type")
+        priority = self.request.query_params.get("priority")
+
+        if is_read is not None:
+            normalized_is_read = is_read.lower()
+
+            if normalized_is_read in ("true", "1", "yes"):
+                queryset = queryset.filter(is_read=True)
+            elif normalized_is_read in ("false", "0", "no"):
+                queryset = queryset.filter(is_read=False)
+
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+
+        if priority:
+            queryset = queryset.filter(priority=priority)
+
+        return queryset
 
     @action(detail=False, methods=["get"], url_path="unread-count")
     def unread_count(self, request):

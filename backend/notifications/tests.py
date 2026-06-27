@@ -154,6 +154,160 @@ class NotificationAPITests(APITestCase):
         if isinstance(response.data, dict) and "results" in response.data:
             return response.data["results"]
         return response.data
+    
+    def test_notification_list_can_filter_by_unread(self):
+        unread_notification = Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            title="Unread notification",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            title="Read notification",
+            is_read=True,
+        )
+        Notification.objects.create(
+            recipient=self.other_user,
+            notification_type=Notification.Type.SYSTEM,
+            title="Other unread notification",
+            is_read=False,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/?is_read=false")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], unread_notification.id)
+        self.assertFalse(results[0]["is_read"])
+
+    def test_notification_list_can_filter_by_read(self):
+        Notification.objects.create(
+            recipient=self.user,
+            title="Unread notification",
+            is_read=False,
+        )
+        read_notification = Notification.objects.create(
+            recipient=self.user,
+            title="Read notification",
+            is_read=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/notifications/?is_read=true")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], read_notification.id)
+        self.assertTrue(results[0]["is_read"])
+
+    def test_notification_list_can_filter_by_notification_type(self):
+        proposal_notification = Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            title="Proposal notification",
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            title="System notification",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            f"/api/notifications/?notification_type={Notification.Type.PROPOSAL}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], proposal_notification.id)
+        self.assertEqual(results[0]["notification_type"], Notification.Type.PROPOSAL)
+
+    def test_notification_list_can_filter_by_priority(self):
+        high_priority_notification = Notification.objects.create(
+            recipient=self.user,
+            priority=Notification.Priority.HIGH,
+            title="High priority notification",
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            priority=Notification.Priority.NORMAL,
+            title="Normal priority notification",
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            f"/api/notifications/?priority={Notification.Priority.HIGH}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], high_priority_notification.id)
+        self.assertEqual(results[0]["priority"], Notification.Priority.HIGH)
+
+    def test_notification_list_can_combine_filters(self):
+        matching_notification = Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Matching notification",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.NORMAL,
+            title="Wrong priority notification",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.SYSTEM,
+            priority=Notification.Priority.HIGH,
+            title="Wrong type notification",
+            is_read=False,
+        )
+        Notification.objects.create(
+            recipient=self.user,
+            notification_type=Notification.Type.PROPOSAL,
+            priority=Notification.Priority.HIGH,
+            title="Read matching notification",
+            is_read=True,
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/notifications/"
+            f"?is_read=false"
+            f"&notification_type={Notification.Type.PROPOSAL}"
+            f"&priority={Notification.Priority.HIGH}"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        results = self.get_results(response)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], matching_notification.id)
 
     def test_authenticated_user_can_list_own_notifications(self):
         own_notification = Notification.objects.create(
