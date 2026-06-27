@@ -19,6 +19,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/catalog/", include("catalog.urls")),
     path("api/projects/", include("projects.urls")),
+    # Notifications API
+    path("api/", include("notifications.urls")),
 
     # Accounts API
     path("api/accounts/", include("accounts.urls")),
