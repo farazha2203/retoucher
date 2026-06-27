@@ -2029,3 +2029,571 @@ class ProjectRequestAPITests(TestCase):
         self.assertIsNotNone(activity)
         self.assertEqual(activity.actor, self.client_user)
         self.assertEqual(activity.metadata["order_id"], order.id)
+
+    def test_failed_direct_proposal_does_not_create_activity_log(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="failed_direct_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Failed Direct Editor",
+            is_available=True,
+            accepts_direct_requests=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Failed direct activity request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=other_editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I should not be allowed to submit this.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=ProjectRequestActivity.Action.DIRECT_PROPOSAL_SUBMITTED,
+            ).exists()
+        )
+
+    def test_failed_managed_assign_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Failed managed assign activity request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            ).exists()
+        )
+
+    def test_failed_convert_to_order_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Failed conversion activity request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Order.objects.count(), 0)
+        self.assertFalse(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+            ).exists()
+        )
+
+    def test_failed_sample_proposal_selection_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Failed sample selection activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+            ).exists()
+        )
+
+    def assert_no_project_request_activity(self, project_request, action):
+        self.assertFalse(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=action,
+            ).exists()
+        )
+
+    def test_failed_direct_proposal_does_not_create_activity_log(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="failed_direct_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Failed Direct Editor",
+            is_available=True,
+            accepts_direct_requests=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Failed direct proposal activity request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=other_editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "I should not be allowed to submit this.",
+            },
+            format="json",
+        )
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND],
+        )
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.DIRECT_PROPOSAL_SUBMITTED,
+        )
+
+    def test_failed_direct_decline_does_not_create_activity_log(self):
+        other_editor_user = get_user_model().objects.create_user(
+            username="failed_decline_editor",
+            password="EditorPass123!",
+        )
+        other_editor_profile = EditorProfile.objects.create(
+            user=other_editor_user,
+            display_name="Failed Decline Editor",
+            is_available=True,
+            accepts_direct_requests=True,
+        )
+        other_editor_profile.skills.add(self.style)
+
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.DIRECT_EDITOR,
+            status=ProjectRequest.Status.WAITING_FOR_EDITOR,
+            title="Failed direct decline activity request",
+            edit_style=self.style,
+            target_editor=self.editor_profile,
+        )
+
+        self.client.force_authenticate(user=other_editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/direct-decline/",
+            {
+                "editor_note": "I should not be allowed to decline this.",
+            },
+            format="json",
+        )
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND],
+        )
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.DIRECT_DECLINED,
+        )
+
+    def test_invalid_public_proposal_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Invalid public proposal activity request",
+            edit_style=self.style,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "editor_note": "Missing required price fields.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ProjectProposal.objects.count(), 0)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+        )
+
+    def test_duplicate_public_proposal_does_not_create_extra_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Duplicate public proposal activity request",
+            edit_style=self.style,
+        )
+
+        ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            proposed_price=300000,
+            editor_fee=220000,
+            estimated_delivery_hours=24,
+        )
+
+        self.client.force_authenticate(user=self.editor_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/public-proposal/",
+            {
+                "proposed_price": 350000,
+                "editor_fee": 250000,
+                "estimated_delivery_hours": 24,
+                "editor_note": "Duplicate proposal should fail.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            ProjectRequestActivity.objects.filter(
+                project_request=project_request,
+                action=ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+            ).count(),
+            0,
+        )
+
+    def test_failed_managed_assign_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Failed managed assign activity request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/managed-assign/",
+            {
+                "editor": self.editor_profile.id,
+                "proposed_price": 400000,
+                "editor_fee": 280000,
+                "estimated_delivery_hours": 36,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ProjectProposal.objects.count(), 0)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+        )
+
+    def test_failed_convert_to_order_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.MANAGED_ORDER,
+            status=ProjectRequest.Status.SUBMITTED,
+            title="Failed conversion activity request",
+            edit_style=self.style,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/convert-to-order/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Order.objects.count(), 0)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+        )
+
+    def test_failed_sample_proposal_selection_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Failed sample selection activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/select/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+        )
+
+    def test_client_cannot_review_sample_proposal_and_no_activity_is_created(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Client forbidden review sample activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.authenticate_client()
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/review-sample/",
+            {
+                "action": "approve",
+                "supervisor_score": 10,
+                "supervisor_note": "Client should not review samples.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, ProjectProposal.Status.UNDER_REVIEW)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+        )
+
+    def test_rejecting_sample_proposal_creates_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+            status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+            title="Sample rejection activity request",
+            edit_style=self.style,
+        )
+
+        proposal = ProjectProposal.objects.create(
+            project_request=project_request,
+            editor=self.editor_profile,
+            status=ProjectProposal.Status.UNDER_REVIEW,
+            proposed_price=450000,
+            editor_fee=320000,
+            estimated_delivery_hours=48,
+            sample_file="project_proposals/samples/sample.jpg",
+            is_visible_to_client=False,
+        )
+
+        self.client.force_authenticate(user=self.staff_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/proposals/{proposal.id}/review-sample/",
+            {
+                "action": "reject",
+                "supervisor_note": "Over-smoothed skin.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        proposal.refresh_from_db()
+
+        activity = ProjectRequestActivity.objects.filter(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+        ).first()
+
+        self.assertIsNotNone(activity)
+        self.assertEqual(activity.actor, self.staff_user)
+        self.assertEqual(activity.metadata["proposal_id"], proposal.id)
+        self.assertEqual(
+            activity.metadata["status"],
+            ProjectProposal.Status.REJECTED_BY_SUPERVISOR,
+        )
+        self.assertIsNone(activity.metadata["supervisor_score"])
+
+    def test_failed_project_request_image_upload_does_not_create_activity_log(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Failed image upload activity request",
+            description="Missing image should fail.",
+            edit_style=self.style,
+            package=self.package,
+        )
+
+        self.client.force_authenticate(user=self.client_user)
+
+        response = self.client.post(
+            f"/api/projects/requests/{project_request.id}/images/",
+            {
+                "caption": "Missing image file.",
+                "is_sample_image": True,
+                "sort_order": 1,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ProjectRequestImage.objects.count(), 0)
+        self.assert_no_project_request_activity(
+            project_request,
+            ProjectRequestActivity.Action.IMAGE_UPLOADED,
+        )
+
+    def test_project_request_activity_endpoint_returns_latest_activity_first(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Activity order request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Created first.",
+            metadata={},
+        )
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.IMAGE_UPLOADED,
+            message="Uploaded second.",
+            metadata={"image_id": 123},
+        )
+
+        self.authenticate_client()
+
+        response = self.client.get(
+            f"/api/projects/requests/{project_request.id}/activity/"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(
+            response.data[0]["action"],
+            ProjectRequestActivity.Action.IMAGE_UPLOADED,
+        )
+        self.assertEqual(
+            response.data[1]["action"],
+            ProjectRequestActivity.Action.CREATED,
+        )
+
+    def test_other_client_cannot_access_project_request_activity_endpoint(self):
+        project_request = ProjectRequest.objects.create(
+            client=self.client_user,
+            request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+            status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+            title="Private activity request",
+            edit_style=self.style,
+        )
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.client_user,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Private activity.",
+            metadata={},
+        )
+
+        self.client.force_authenticate(user=self.other_client)
+
+        response = self.client.get(
+            f"/api/projects/requests/{project_request.id}/activity/"
+        )
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND],
+        )
