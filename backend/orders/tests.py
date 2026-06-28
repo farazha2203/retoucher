@@ -23,7 +23,6 @@ from .models import (
     OrderNotification,
 )
 
-
 TEMP_MEDIA_ROOT = tempfile.mkdtemp()
 
 
@@ -224,7 +223,10 @@ class OrderCommentsAndNotificationsAPITests(APITestCase):
 
         self.assertEqual(point_filter_response.status_code, drf_status.HTTP_200_OK)
         self.assertTrue(
-            all(item["annotation_type"] == "point" for item in point_filter_response.data)
+            all(
+                item["annotation_type"] == "point"
+                for item in point_filter_response.data
+            )
         )
 
     def test_point_annotation_requires_coordinates(self):
@@ -356,6 +358,7 @@ class OrderCommentsAndNotificationsAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, drf_status.HTTP_404_NOT_FOUND)
+
 
 class OrderRatingAndPublicationModelTests(TestCase):
     def setUp(self):
@@ -551,6 +554,7 @@ class OrderRatingAndPublicationModelTests(TestCase):
         self.assertIsNotNone(delivery.publication_reviewed_at)
         self.assertEqual(delivery.publication_note, "Do not publish this work")
         self.assertFalse(delivery.is_public)
+
 
 class OrderDeliveryPublicationAPITests(APITestCase):
     def setUp(self):
@@ -769,6 +773,7 @@ class OrderDeliveryPublicationAPITests(APITestCase):
         )
         self.assertFalse(self.delivery.is_public)
 
+
 class OrderCommentPublicVisibilityTests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -981,6 +986,7 @@ class OrderCommentPublicVisibilityTests(APITestCase):
         self.assertNotIn(deleted_comment.id, returned_ids)
         self.assertEqual(len(returned_ids), 0)
 
+
 class PublicOrderDeliveryAPITests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -1092,6 +1098,7 @@ class PublicOrderDeliveryAPITests(APITestCase):
         )
         self.assertTrue(item["is_public"])
 
+
 class PublicOrderDeliveryDetailAPITests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -1201,10 +1208,7 @@ class PublicOrderDeliveryDetailAPITests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        returned_ids = {
-            item["id"]
-            for item in response.data["public_comments"]
-        }
+        returned_ids = {item["id"] for item in response.data["public_comments"]}
 
         self.assertIn(public_comment.id, returned_ids)
         self.assertNotIn(active_comment.id, returned_ids)
@@ -1233,6 +1237,7 @@ class PublicOrderDeliveryDetailAPITests(APITestCase):
         )
         self.assertTrue(response.data["is_public"])
         self.assertIn("public_comments", response.data)
+
 
 class PublicOrderDeliveryFilterAPITests(APITestCase):
     def setUp(self):
@@ -1489,9 +1494,7 @@ class PublicOrderDeliveryCommentCountTests(APITestCase):
         self.assertEqual(response.status_code, 200)
 
         item = next(
-            item
-            for item in response.data
-            if item["id"] == self.public_delivery.id
+            item for item in response.data if item["id"] == self.public_delivery.id
         )
 
         self.assertEqual(item["public_comments_count"], 2)
@@ -1547,6 +1550,7 @@ class PublicOrderDeliveryCommentCountTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["public_comments_count"], 1)
+
 
 class PublicOrderDeliveryCommentCountAnnotationTests(APITestCase):
     def setUp(self):
@@ -1622,11 +1626,7 @@ class PublicOrderDeliveryCommentCountAnnotationTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        item = next(
-            item
-            for item in response.data
-            if item["id"] == self.delivery.id
-        )
+        item = next(item for item in response.data if item["id"] == self.delivery.id)
 
         self.assertEqual(item["public_comments_count"], 2)
 
@@ -1652,6 +1652,7 @@ class PublicOrderDeliveryCommentCountAnnotationTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["public_comments_count"], 1)
+
 
 class PublicOrderDeliveryPaginationBehaviorTests(APITestCase):
     def setUp(self):
@@ -1709,6 +1710,7 @@ class PublicOrderDeliveryPaginationBehaviorTests(APITestCase):
             self.assertLessEqual(len(response.data["results"]), 2)
         else:
             self.assertEqual(len(response.data), 3)
+
 
 class PublicEditorPortfolioAPITests(APITestCase):
     def setUp(self):
@@ -1884,6 +1886,7 @@ class PublicEditorPortfolioAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
 
 class PublicEditorPortfolioPolishTests(APITestCase):
     def setUp(self):
@@ -2061,3 +2064,203 @@ class PublicEditorPortfolioPolishTests(APITestCase):
             set(delivery_ids),
             {self.first_delivery.id, self.second_delivery.id},
         )
+
+
+class PublicEditorPortfolioRatingSummaryTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="portfolio-rating-client",
+            password="pass12345",
+            role="client",
+        )
+        self.supervisor_user = User.objects.create_user(
+            username="portfolio-rating-supervisor",
+            password="pass12345",
+            role="supervisor",
+        )
+        self.editor_user = User.objects.create_user(
+            username="portfolio-rating-editor",
+            password="pass12345",
+            role="editor",
+        )
+        self.other_editor = User.objects.create_user(
+            username="portfolio-rating-other-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.public_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Rating Public Order",
+            description="Public order for rating summary",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.second_public_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Rating Second Public Order",
+            description="Second public order for rating summary",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.private_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Rating Private Order",
+            description="Private order should not affect public rating",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.other_editor_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.other_editor,
+            title="Portfolio Rating Other Editor Order",
+            description="Other editor order should not affect rating",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.public_order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-rating-public.jpg",
+                b"portfolio-rating-public-content",
+                content_type="image/jpeg",
+            ),
+            note="Public delivery for rating",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.second_public_delivery = OrderDelivery.objects.create(
+            order=self.second_public_order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-rating-public-second.jpg",
+                b"portfolio-rating-public-second-content",
+                content_type="image/jpeg",
+            ),
+            note="Second public delivery for rating",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.private_order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-rating-private.jpg",
+                b"portfolio-rating-private-content",
+                content_type="image/jpeg",
+            ),
+            note="Private delivery for rating",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        self.other_editor_delivery = OrderDelivery.objects.create(
+            order=self.other_editor_order,
+            uploaded_by=self.other_editor,
+            file=SimpleUploadedFile(
+                "portfolio-rating-other-editor.jpg",
+                b"portfolio-rating-other-editor-content",
+                content_type="image/jpeg",
+            ),
+            note="Other editor public delivery for rating",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        OrderRating.objects.create(
+            order=self.public_order,
+            rated_by=self.client_user,
+            source="client",
+            score=5,
+            comment="Great public work",
+        )
+
+        OrderRating.objects.create(
+            order=self.second_public_order,
+            rated_by=self.supervisor_user,
+            source="supervisor",
+            score=3,
+            comment="Good public work",
+        )
+
+        OrderRating.objects.create(
+            order=self.private_order,
+            rated_by=self.client_user,
+            source="client",
+            score=1,
+            comment="Private order rating should not be public",
+        )
+
+        OrderRating.objects.create(
+            order=self.other_editor_order,
+            rated_by=self.client_user,
+            source="client",
+            score=1,
+            comment="Other editor rating should not affect this editor",
+        )
+
+    def _portfolio_url(self, editor):
+        return reverse(
+            "orders-public-editor-portfolio",
+            kwargs={"editor_id": editor.id},
+        )
+
+    def test_public_editor_portfolio_contains_rating_summary(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("rating", response.data)
+        self.assertIn("average", response.data["rating"])
+        self.assertIn("count", response.data["rating"])
+
+    def test_public_editor_portfolio_rating_summary_calculates_average(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["rating"]["average"], 4.0)
+
+    def test_public_editor_portfolio_rating_summary_calculates_count(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["rating"]["count"], 2)
+
+    def test_public_editor_portfolio_rating_excludes_orders_without_public_delivery(
+        self,
+    ):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        # If private_order rating with score=1 was included,
+        # average would be 3.0 instead of 4.0 and count would be 3.
+        self.assertEqual(response.data["rating"]["average"], 4.0)
+        self.assertEqual(response.data["rating"]["count"], 2)
+
+    def test_public_editor_portfolio_rating_excludes_other_editor_ratings(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        # Other editor rating score=1 must not affect this editor.
+        self.assertEqual(response.data["rating"]["average"], 4.0)
+        self.assertEqual(response.data["rating"]["count"], 2)
+
+    def test_public_editor_portfolio_rating_returns_zero_for_editor_without_ratings(
+        self,
+    ):
+        empty_editor = get_user_model().objects.create_user(
+            username="portfolio-rating-empty-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        response = self.client.get(self._portfolio_url(empty_editor))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["rating"]["average"], 0)
+        self.assertEqual(response.data["rating"]["count"], 0)

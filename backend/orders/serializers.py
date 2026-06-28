@@ -534,14 +534,21 @@ class PublicEditorPortfolioUserSerializer(serializers.Serializer):
     first_name = serializers.CharField(allow_blank=True)
     last_name = serializers.CharField(allow_blank=True)
 
+
 class PublicEditorPortfolioStatsSerializer(serializers.Serializer):
     public_deliveries_count = serializers.IntegerField()
     public_comments_count = serializers.IntegerField()
 
 
+class PublicEditorPortfolioRatingSerializer(serializers.Serializer):
+    average = serializers.FloatField()
+    count = serializers.IntegerField()
+
+
 class PublicEditorPortfolioSerializer(serializers.Serializer):
     editor = PublicEditorPortfolioUserSerializer()
-    stats = serializers.DictField()
+    stats = PublicEditorPortfolioStatsSerializer()
+    rating = PublicEditorPortfolioRatingSerializer()
     deliveries = PublicOrderDeliverySerializer(many=True)
 
 

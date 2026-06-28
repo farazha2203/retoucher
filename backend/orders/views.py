@@ -11,7 +11,7 @@ from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -200,6 +200,25 @@ class OrderViewSet(viewsets.ModelViewSet):
                 )
             )
         )
+
+    def _get_public_editor_rating_summary(self, editor, deliveries):
+        public_order_ids = deliveries.values_list("order_id", flat=True).distinct()
+
+        rating_stats = OrderRating.objects.filter(
+            order_id__in=public_order_ids,
+        ).aggregate(
+            average=Avg("score"),
+            count=Count("id"),
+        )
+
+        average = rating_stats["average"]
+        if average is not None:
+            average = round(float(average), 2)
+
+        return {
+            "average": average or 0,
+            "count": rating_stats["count"] or 0,
+        }
 
     def _apply_order_filters(self, queryset):
         params = self.request.query_params
@@ -1584,7 +1603,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @extend_schema(
         tags=["Public Deliveries"],
         summary="Retrieve public editor portfolio",
@@ -1634,9 +1653,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        deliveries = self._get_public_deliveries_queryset().filter(
-            uploaded_by=editor
-        )
+        deliveries = self._get_public_deliveries_queryset().filter(uploaded_by=editor)
 
         ordering = request.query_params.get("ordering", "newest")
 
@@ -1667,6 +1684,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             ).count(),
         }
 
+        rating = self._get_public_editor_rating_summary(editor, deliveries)
+
         editor_data = {
             "id": editor.id,
             "username": editor.username,
@@ -1684,12 +1703,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             {
                 "editor": editor_data,
                 "stats": stats,
+                "rating": rating,
                 "deliveries": deliveries_serializer.data,
             },
             status=status.HTTP_200_OK,
         )
-
-
 
     @extend_schema(
         methods=["GET"],
