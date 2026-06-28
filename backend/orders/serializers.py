@@ -545,6 +545,15 @@ class PublicEditorPortfolioRatingSerializer(serializers.Serializer):
     average = serializers.FloatField()
     count = serializers.IntegerField()
 
+
+class PublicEditorListItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    first_name = serializers.CharField(allow_blank=True)
+    last_name = serializers.CharField(allow_blank=True)
+    stats = PublicEditorPortfolioStatsSerializer()
+    rating = PublicEditorPortfolioRatingSerializer()
+
 class PublicEditorPortfolioMetaSerializer(serializers.Serializer):
     ordering = serializers.CharField()
     available_orderings = serializers.ListField(

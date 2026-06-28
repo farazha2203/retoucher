@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from datetime import datetime, time, timedelta
@@ -68,6 +69,7 @@ from .serializers import (
     PublicOrderDeliverySerializer,
     PublicOrderDeliveryDetailSerializer,
     PublicEditorPortfolioSerializer,
+    PublicEditorListItemSerializer,
 )
 
 User = get_user_model()
@@ -389,6 +391,44 @@ class OrderViewSet(viewsets.ModelViewSet):
         }
 
         return title_map.get(activity_type, "New activity on order")
+
+    def _get_public_editor_list_item(self, editor):
+        public_deliveries = OrderDelivery.objects.filter(
+            uploaded_by=editor,
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        ).annotate(
+            public_comments_count=Count(
+                "comments",
+                filter=Q(
+                    comments__status=OrderComment.Status.APPROVED,
+                    comments__target_type=OrderComment.TargetType.DELIVERY,
+                ),
+            )
+        )
+
+        public_order_ids = list(
+            public_deliveries.values_list("order_id", flat=True).distinct()
+        )
+
+        rating = self._get_public_editor_rating_summary(public_order_ids)
+
+        return {
+            "id": editor.id,
+            "username": editor.username,
+            "first_name": editor.first_name,
+            "last_name": editor.last_name,
+            "stats": {
+                "public_deliveries_count": public_deliveries.count(),
+                "public_comments_count": OrderComment.objects.filter(
+                    delivery__uploaded_by=editor,
+                    delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                    status=OrderComment.Status.APPROVED,
+                    target_type=OrderComment.TargetType.DELIVERY,
+                ).count(),
+                "public_orders_count": len(public_order_ids),
+            },
+            "rating": rating,
+        }
 
     def _create_order_notifications(
         self,
@@ -1813,6 +1853,168 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+    
+    @extend_schema(
+        tags=["Public Portfolio"],
+        summary="List public editors",
+        description=(
+            "Returns editors who have at least one approved public delivery. "
+            "Each item includes safe public identity fields, public portfolio stats, "
+            "and public rating summary. Private deliveries and ratings from orders "
+            "without public deliveries are excluded."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "search",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Search editors by username, first name, or last name."
+                ),
+            ),
+            OpenApiParameter(
+                "ordering",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Ordering mode. Allowed values: newest, top_rated, "
+                    "most_deliveries, most_commented. Invalid values fall back to newest."
+                ),
+                examples=[
+                    OpenApiExample(
+                        "Newest",
+                        value="newest",
+                        description="Sort editors by newest user id first.",
+                    ),
+                    OpenApiExample(
+                        "Top rated",
+                        value="top_rated",
+                        description="Sort editors by public rating average.",
+                    ),
+                    OpenApiExample(
+                        "Most deliveries",
+                        value="most_deliveries",
+                        description="Sort editors by public delivery count.",
+                    ),
+                    OpenApiExample(
+                        "Most commented",
+                        value="most_commented",
+                        description="Sort editors by approved public comments count.",
+                    ),
+                ],
+            ),
+        ],
+        responses={
+            200: PublicEditorListItemSerializer(many=True),
+        },
+        examples=[
+            OpenApiExample(
+                "Public editors list",
+                value=[
+                    {
+                        "id": 12,
+                        "username": "retouch_editor",
+                        "first_name": "Ali",
+                        "last_name": "Ahmadi",
+                        "stats": {
+                            "public_deliveries_count": 3,
+                            "public_comments_count": 5,
+                            "public_orders_count": 2,
+                        },
+                        "rating": {
+                            "average": 4.5,
+                            "count": 2,
+                        },
+                    }
+                ],
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="public-editors",
+        permission_classes=[AllowAny],
+    )
+    def public_editors(self, request):
+        User = get_user_model()
+
+        available_orderings = [
+            "newest",
+            "top_rated",
+            "most_deliveries",
+            "most_commented",
+        ]
+        ordering = request.query_params.get("ordering", "newest")
+        if ordering not in available_orderings:
+            ordering = "newest"
+
+        public_editor_ids = OrderDelivery.objects.filter(
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        ).values_list("uploaded_by_id", flat=True).distinct()
+
+        editors = User.objects.filter(
+            id__in=public_editor_ids,
+            role="editor",
+        )
+
+        search = request.query_params.get("search")
+        if search:
+            editors = editors.filter(
+                Q(username__icontains=search)
+                | Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+            )
+
+        items = [
+            self._get_public_editor_list_item(editor)
+            for editor in editors
+        ]
+
+        if ordering == "top_rated":
+            items.sort(
+                key=lambda item: (
+                    item["rating"]["average"],
+                    item["rating"]["count"],
+                    item["stats"]["public_deliveries_count"],
+                    item["id"],
+                ),
+                reverse=True,
+            )
+        elif ordering == "most_deliveries":
+            items.sort(
+                key=lambda item: (
+                    item["stats"]["public_deliveries_count"],
+                    item["rating"]["average"],
+                    item["id"],
+                ),
+                reverse=True,
+            )
+        elif ordering == "most_commented":
+            items.sort(
+                key=lambda item: (
+                    item["stats"]["public_comments_count"],
+                    item["rating"]["average"],
+                    item["id"],
+                ),
+                reverse=True,
+            )
+        else:
+            items.sort(
+                key=lambda item: item["id"],
+                reverse=True,
+            )
+
+        serializer = PublicEditorListItemSerializer(
+            items,
+            many=True,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
         methods=["GET"],

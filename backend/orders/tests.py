@@ -2560,3 +2560,323 @@ class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
 
         self.assertIn(self.public_delivery.id, delivery_ids)
         self.assertNotIn(self.private_delivery.id, delivery_ids)
+
+class PublicEditorListEndpointTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-editor-list-client",
+            password="pass12345",
+            role="client",
+        )
+
+        self.editor_low = User.objects.create_user(
+            username="alpha-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Alpha",
+            last_name="Low",
+        )
+        self.editor_high = User.objects.create_user(
+            username="beta-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Beta",
+            last_name="High",
+        )
+        self.editor_private_only = User.objects.create_user(
+            username="private-only-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Private",
+            last_name="Only",
+        )
+        self.non_editor = User.objects.create_user(
+            username="public-editor-list-non-editor",
+            password="pass12345",
+            role="client",
+            first_name="Not",
+            last_name="Editor",
+        )
+
+        self.low_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_low,
+            title="Low Editor Public Order",
+            description="Public order for low editor",
+            status=Order.Status.DELIVERED,
+        )
+        self.high_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_high,
+            title="High Editor Public Order",
+            description="Public order for high editor",
+            status=Order.Status.DELIVERED,
+        )
+        self.high_second_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_high,
+            title="High Editor Second Public Order",
+            description="Second public order for high editor",
+            status=Order.Status.DELIVERED,
+        )
+        self.private_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_private_only,
+            title="Private Only Editor Order",
+            description="Private delivery should exclude editor from public list",
+            status=Order.Status.DELIVERED,
+        )
+        self.non_editor_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_low,
+            title="Non Editor Uploaded Delivery Order",
+            description="Non editor uploaded delivery should not expose non editor as public editor",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.low_delivery = OrderDelivery.objects.create(
+            order=self.low_order,
+            uploaded_by=self.editor_low,
+            file=SimpleUploadedFile(
+                "public-editor-list-low.jpg",
+                b"public-editor-list-low-content",
+                content_type="image/jpeg",
+            ),
+            note="Low editor public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.high_delivery = OrderDelivery.objects.create(
+            order=self.high_order,
+            uploaded_by=self.editor_high,
+            file=SimpleUploadedFile(
+                "public-editor-list-high.jpg",
+                b"public-editor-list-high-content",
+                content_type="image/jpeg",
+            ),
+            note="High editor public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.high_second_delivery = OrderDelivery.objects.create(
+            order=self.high_second_order,
+            uploaded_by=self.editor_high,
+            file=SimpleUploadedFile(
+                "public-editor-list-high-second.jpg",
+                b"public-editor-list-high-second-content",
+                content_type="image/jpeg",
+            ),
+            note="High editor second public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.private_order,
+            uploaded_by=self.editor_private_only,
+            file=SimpleUploadedFile(
+                "public-editor-list-private.jpg",
+                b"public-editor-list-private-content",
+                content_type="image/jpeg",
+            ),
+            note="Private only delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        self.non_editor_delivery = OrderDelivery.objects.create(
+            order=self.non_editor_order,
+            uploaded_by=self.non_editor,
+            file=SimpleUploadedFile(
+                "public-editor-list-non-editor.jpg",
+                b"public-editor-list-non-editor-content",
+                content_type="image/jpeg",
+            ),
+            note="Non editor public delivery should not list non editor",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        OrderRating.objects.create(
+            order=self.low_order,
+            rated_by=self.client_user,
+            source="client",
+            score=3,
+            comment="Low editor rating",
+        )
+        OrderRating.objects.create(
+            order=self.high_order,
+            rated_by=self.client_user,
+            source="client",
+            score=5,
+            comment="High editor rating",
+        )
+        OrderRating.objects.create(
+            order=self.high_second_order,
+            rated_by=self.client_user,
+            source="client",
+            score=4,
+            comment="High editor second rating",
+        )
+        OrderRating.objects.create(
+            order=self.private_order,
+            rated_by=self.client_user,
+            source="client",
+            score=1,
+            comment="Private only editor rating should not be public",
+        )
+
+        OrderComment.objects.create(
+            order=self.high_order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.high_delivery,
+            text="High editor approved comment 1",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.high_order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.high_delivery,
+            text="High editor approved comment 2",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.low_order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.low_delivery,
+            text="Low editor approved comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+    def _url(self):
+        return reverse("orders-public-editors")
+
+    def test_public_editors_list_returns_only_editors_with_public_deliveries(self):
+        response = self.client.get(self._url())
+
+        self.assertEqual(response.status_code, 200)
+
+        ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.editor_low.id, ids)
+        self.assertIn(self.editor_high.id, ids)
+        self.assertNotIn(self.editor_private_only.id, ids)
+        self.assertNotIn(self.non_editor.id, ids)
+
+    def test_public_editors_list_item_contract(self):
+        response = self.client.get(self._url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 1)
+
+        item = response.data[0]
+
+        self.assertEqual(
+            set(item.keys()),
+            {"id", "username", "first_name", "last_name", "stats", "rating"},
+        )
+        self.assertEqual(
+            set(item["stats"].keys()),
+            {
+                "public_deliveries_count",
+                "public_comments_count",
+                "public_orders_count",
+            },
+        )
+        self.assertEqual(
+            set(item["rating"].keys()),
+            {"average", "count"},
+        )
+
+    def test_public_editors_list_includes_stats_and_rating(self):
+        response = self.client.get(self._url())
+
+        self.assertEqual(response.status_code, 200)
+
+        items_by_id = {item["id"]: item for item in response.data}
+        high_item = items_by_id[self.editor_high.id]
+
+        self.assertEqual(high_item["stats"]["public_deliveries_count"], 2)
+        self.assertEqual(high_item["stats"]["public_orders_count"], 2)
+        self.assertEqual(high_item["stats"]["public_comments_count"], 2)
+        self.assertEqual(high_item["rating"]["average"], 4.5)
+        self.assertEqual(high_item["rating"]["count"], 2)
+
+    def test_public_editors_list_search_filters_by_username(self):
+        response = self.client.get(
+            self._url(),
+            {"search": "alpha"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.editor_low.id, ids)
+        self.assertNotIn(self.editor_high.id, ids)
+
+    def test_public_editors_list_search_filters_by_first_name(self):
+        response = self.client.get(
+            self._url(),
+            {"search": "Beta"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.editor_high.id, ids)
+        self.assertNotIn(self.editor_low.id, ids)
+
+    def test_public_editors_list_ordering_top_rated(self):
+        response = self.client.get(
+            self._url(),
+            {"ordering": "top_rated"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+
+    def test_public_editors_list_ordering_most_deliveries(self):
+        response = self.client.get(
+            self._url(),
+            {"ordering": "most_deliveries"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+
+    def test_public_editors_list_ordering_most_commented(self):
+        response = self.client.get(
+            self._url(),
+            {"ordering": "most_commented"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+
+    def test_public_editors_list_invalid_ordering_falls_back_to_newest(self):
+        response = self.client.get(
+            self._url(),
+            {"ordering": "invalid-value"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 2)
+
+        # newest fallback sorts by id descending
+        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+
+    def test_public_editors_list_empty_search_returns_empty_list(self):
+        response = self.client.get(
+            self._url(),
+            {"search": "no-editor-should-match-this"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
