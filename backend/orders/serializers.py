@@ -136,7 +136,12 @@ class PublicOrderDeliverySerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField)
     def get_public_comments_count(self, obj):
-        return obj.comments.filter(
+        annotated_count = getattr(obj, "public_comments_count", None)
+
+        if annotated_count is not None:
+            return annotated_count
+
+        return OrderComment.objects.filter(
             status=OrderComment.Status.APPROVED,
             target_type=OrderComment.TargetType.DELIVERY,
             delivery=obj,

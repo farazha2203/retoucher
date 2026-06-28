@@ -1547,3 +1547,108 @@ class PublicOrderDeliveryCommentCountTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["public_comments_count"], 1)
+
+class PublicOrderDeliveryCommentCountAnnotationTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-count-annotation-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="public-count-annotation-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Public Count Annotation Order",
+            description="Testing annotated public comment counts",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "public-count-annotation-delivery.jpg",
+                b"public-count-annotation-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Annotated public comment count",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+    def _public_deliveries_url(self):
+        return reverse("orders-public-deliveries")
+
+    def _public_delivery_detail_url(self):
+        return reverse(
+            "orders-public-delivery-detail",
+            kwargs={"delivery_id": self.delivery.id},
+        )
+
+    def test_public_delivery_list_uses_annotated_public_comments_count(self):
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.delivery,
+            text="Approved public comment one",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.delivery,
+            text="Approved public comment two",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.delivery,
+            text="Active comment not public",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        response = self.client.get(self._public_deliveries_url())
+
+        self.assertEqual(response.status_code, 200)
+
+        item = next(
+            item
+            for item in response.data
+            if item["id"] == self.delivery.id
+        )
+
+        self.assertEqual(item["public_comments_count"], 2)
+
+    def test_public_delivery_detail_uses_annotated_public_comments_count(self):
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.delivery,
+            text="Approved public comment",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.delivery,
+            text="Deleted comment not public",
+            status=OrderComment.Status.DELETED,
+        )
+
+        response = self.client.get(self._public_delivery_detail_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["public_comments_count"], 1)

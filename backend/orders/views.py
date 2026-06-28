@@ -11,7 +11,7 @@ from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -1497,6 +1497,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             .filter(
                 publication_status=OrderDelivery.PublicationStatus.APPROVED,
             )
+            .annotate(
+                public_comments_count=Count(
+                    "comments",
+                    filter=Q(
+                        comments__status=OrderComment.Status.APPROVED,
+                        comments__target_type=OrderComment.TargetType.DELIVERY,
+                    ),
+                )
+            )
         )
 
         editor_id = request.query_params.get("editor")
@@ -1565,6 +1574,15 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "comments__resolved_by",
                     "comments__parent",
                     "comments__parent__sender",
+                )
+                .annotate(
+                    public_comments_count=Count(
+                        "comments",
+                        filter=Q(
+                            comments__status=OrderComment.Status.APPROVED,
+                            comments__target_type=OrderComment.TargetType.DELIVERY,
+                        ),
+                    )
                 )
                 .get(
                     id=delivery_id,
