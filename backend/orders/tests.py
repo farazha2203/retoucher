@@ -2264,3 +2264,100 @@ class PublicEditorPortfolioRatingSummaryTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["rating"]["average"], 0)
         self.assertEqual(response.data["rating"]["count"], 0)
+
+class PublicEditorPortfolioResponsePolishTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="portfolio-response-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="portfolio-response-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.first_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Response First Order",
+            description="First public order",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.second_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Response Second Order",
+            description="Second public order",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.first_delivery = OrderDelivery.objects.create(
+            order=self.first_order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-response-first.jpg",
+                b"portfolio-response-first-content",
+                content_type="image/jpeg",
+            ),
+            note="First public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.second_delivery = OrderDelivery.objects.create(
+            order=self.second_order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-response-second.jpg",
+                b"portfolio-response-second-content",
+                content_type="image/jpeg",
+            ),
+            note="Second public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+    def _portfolio_url(self):
+        return reverse(
+            "orders-public-editor-portfolio",
+            kwargs={"editor_id": self.editor_user.id},
+        )
+
+    def test_public_editor_portfolio_contains_public_orders_count(self):
+        response = self.client.get(self._portfolio_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("public_orders_count", response.data["stats"])
+        self.assertEqual(response.data["stats"]["public_orders_count"], 2)
+
+    def test_public_editor_portfolio_contains_meta(self):
+        response = self.client.get(self._portfolio_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("meta", response.data)
+        self.assertEqual(response.data["meta"]["ordering"], "newest")
+        self.assertEqual(
+            response.data["meta"]["available_orderings"],
+            ["newest", "oldest", "most_commented"],
+        )
+
+    def test_public_editor_portfolio_meta_reflects_requested_ordering(self):
+        response = self.client.get(
+            self._portfolio_url(),
+            {"ordering": "oldest"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["meta"]["ordering"], "oldest")
+
+    def test_public_editor_portfolio_invalid_ordering_falls_back_to_newest(self):
+        response = self.client.get(
+            self._portfolio_url(),
+            {"ordering": "invalid-ordering"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["meta"]["ordering"], "newest")

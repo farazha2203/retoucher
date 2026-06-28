@@ -201,9 +201,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         )
 
-    def _get_public_editor_rating_summary(self, editor, deliveries):
-        public_order_ids = deliveries.values_list("order_id", flat=True).distinct()
-
+    def _get_public_editor_rating_summary(self, public_order_ids):
         rating_stats = OrderRating.objects.filter(
             order_id__in=public_order_ids,
         ).aggregate(
@@ -1655,7 +1653,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         deliveries = self._get_public_deliveries_queryset().filter(uploaded_by=editor)
 
+        available_orderings = ["newest", "oldest", "most_commented"]
         ordering = request.query_params.get("ordering", "newest")
+
+        if ordering not in available_orderings:
+            ordering = "newest"
 
         if ordering == "oldest":
             deliveries = deliveries.order_by(
@@ -1674,6 +1676,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "-uploaded_at",
             )
 
+        public_order_ids = list(
+            deliveries.values_list("order_id", flat=True).distinct()
+        )
+
         stats = {
             "public_deliveries_count": deliveries.count(),
             "public_comments_count": OrderComment.objects.filter(
@@ -1682,9 +1688,15 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=OrderComment.Status.APPROVED,
                 target_type=OrderComment.TargetType.DELIVERY,
             ).count(),
+            "public_orders_count": len(public_order_ids),
         }
 
-        rating = self._get_public_editor_rating_summary(editor, deliveries)
+        rating = self._get_public_editor_rating_summary(public_order_ids)
+
+        meta = {
+            "ordering": ordering,
+            "available_orderings": available_orderings,
+        }
 
         editor_data = {
             "id": editor.id,
@@ -1704,6 +1716,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 "editor": editor_data,
                 "stats": stats,
                 "rating": rating,
+                "meta": meta,
                 "deliveries": deliveries_serializer.data,
             },
             status=status.HTTP_200_OK,
