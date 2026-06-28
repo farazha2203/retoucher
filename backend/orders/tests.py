@@ -550,3 +550,220 @@ class OrderRatingAndPublicationModelTests(TestCase):
         self.assertIsNotNone(delivery.publication_reviewed_at)
         self.assertEqual(delivery.publication_note, "Do not publish this work")
         self.assertFalse(delivery.is_public)
+
+class OrderDeliveryPublicationAPITests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="publication-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="publication-editor",
+            password="pass12345",
+            role="editor",
+        )
+        self.other_user = User.objects.create_user(
+            username="publication-other",
+            password="pass12345",
+            role="client",
+        )
+        self.supervisor_user = User.objects.create_user(
+            username="publication-supervisor",
+            password="pass12345",
+            role="supervisor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Publication API Order",
+            description="Publication API order description",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "publication-delivery.jpg",
+                b"fake-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Final delivery",
+        )
+
+    def _request_publication_url(self):
+        return reverse(
+            "orders-request-delivery-publication",
+            kwargs={
+                "pk": self.order.pk,
+                "delivery_id": self.delivery.pk,
+            },
+        )
+
+    def _approve_publication_url(self):
+        return reverse(
+            "orders-approve-delivery-publication",
+            kwargs={
+                "pk": self.order.pk,
+                "delivery_id": self.delivery.pk,
+            },
+        )
+
+    def _reject_publication_url(self):
+        return reverse(
+            "orders-reject-delivery-publication",
+            kwargs={
+                "pk": self.order.pk,
+                "delivery_id": self.delivery.pk,
+            },
+        )
+
+    def test_assigned_editor_can_request_delivery_publication(self):
+        self.client.force_authenticate(self.editor_user)
+
+        response = self.client.post(self._request_publication_url())
+
+        self.assertEqual(response.status_code, 200)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.REQUESTED,
+        )
+        self.assertEqual(
+            self.delivery.publication_requested_by,
+            self.editor_user,
+        )
+        self.assertIsNotNone(self.delivery.publication_requested_at)
+        self.assertFalse(self.delivery.is_public)
+
+    def test_non_assigned_user_cannot_request_delivery_publication(self):
+        self.client.force_authenticate(self.other_user)
+
+        response = self.client.post(self._request_publication_url())
+
+        self.assertEqual(response.status_code, 404)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+    def test_order_owner_can_approve_requested_delivery_publication(self):
+        self.delivery.request_publication(self.editor_user)
+
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.post(
+            self._approve_publication_url(),
+            {"note": "Approved by owner"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.APPROVED,
+        )
+        self.assertEqual(
+            self.delivery.publication_reviewed_by,
+            self.client_user,
+        )
+        self.assertEqual(self.delivery.publication_note, "Approved by owner")
+        self.assertTrue(self.delivery.is_public)
+
+    def test_other_user_cannot_approve_delivery_publication(self):
+        self.delivery.request_publication(self.editor_user)
+
+        self.client.force_authenticate(self.other_user)
+
+        response = self.client.post(
+            self._approve_publication_url(),
+            {"note": "Trying to approve"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.REQUESTED,
+        )
+        self.assertFalse(self.delivery.is_public)
+
+    def test_order_owner_can_reject_requested_delivery_publication(self):
+        self.delivery.request_publication(self.editor_user)
+
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.post(
+            self._reject_publication_url(),
+            {"note": "Do not publish"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.REJECTED,
+        )
+        self.assertEqual(
+            self.delivery.publication_reviewed_by,
+            self.client_user,
+        )
+        self.assertEqual(self.delivery.publication_note, "Do not publish")
+        self.assertFalse(self.delivery.is_public)
+
+    def test_supervisor_can_manage_delivery_publication(self):
+        self.client.force_authenticate(self.supervisor_user)
+
+        request_response = self.client.post(self._request_publication_url())
+
+        self.assertEqual(request_response.status_code, 200)
+
+        approve_response = self.client.post(
+            self._approve_publication_url(),
+            {"note": "Approved by supervisor"},
+            format="json",
+        )
+
+        self.assertEqual(approve_response.status_code, 200)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.APPROVED,
+        )
+        self.assertEqual(
+            self.delivery.publication_reviewed_by,
+            self.supervisor_user,
+        )
+        self.assertTrue(self.delivery.is_public)
+
+    def test_cannot_approve_delivery_without_publication_request(self):
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.post(
+            self._approve_publication_url(),
+            {"note": "Approve without request"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+        self.delivery.refresh_from_db()
+        self.assertEqual(
+            self.delivery.publication_status,
+            OrderDelivery.PublicationStatus.PRIVATE,
+        )
+        self.assertFalse(self.delivery.is_public)

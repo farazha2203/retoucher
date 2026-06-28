@@ -76,17 +76,33 @@ class OrderDeliverySerializer(serializers.ModelSerializer):
         model = OrderDelivery
         fields = (
             "id",
+            "order",
             "file",
             "note",
             "uploaded_by",
             "uploaded_by_username",
             "uploaded_at",
+            "publication_status",
+            "publication_requested_by",
+            "publication_requested_at",
+            "publication_reviewed_by",
+            "publication_reviewed_at",
+            "publication_note",
+            "is_public",
         )
         read_only_fields = (
             "id",
+            "order",
             "uploaded_by",
             "uploaded_by_username",
             "uploaded_at",
+            "publication_status",
+            "publication_requested_by",
+            "publication_requested_at",
+            "publication_reviewed_by",
+            "publication_reviewed_at",
+            "publication_note",
+            "is_public",
         )
 
 

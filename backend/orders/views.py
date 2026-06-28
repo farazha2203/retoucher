@@ -424,6 +424,120 @@ class OrderViewSet(viewsets.ModelViewSet):
             note=note,
         )
 
+    def _is_publication_manager(self, user):
+        return (
+            getattr(user, "role", None) in {"admin", "supervisor"}
+            or getattr(user, "is_superuser", False)
+        )
+
+    def _get_order_delivery(self, order, delivery_id):
+        return get_object_or_404(
+            OrderDelivery,
+            id=delivery_id,
+            order=order,
+        )
+    
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"deliveries/(?P<delivery_id>[^/.]+)/request-publication",
+    )
+    def request_delivery_publication(self, request, pk=None, delivery_id=None):
+        order = self.get_object()
+        delivery = self._get_order_delivery(order, delivery_id)
+
+        if not (
+            order.editor_id == request.user.id
+            or self._is_publication_manager(request.user)
+        ):
+            raise PermissionDenied(
+                "Only the assigned editor or publication managers can request publication."
+            )
+
+        if delivery.publication_status == OrderDelivery.PublicationStatus.APPROVED:
+            return Response(
+                {"detail": "This delivery is already public."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        delivery.request_publication(request.user)
+
+        serializer = OrderDeliverySerializer(
+            delivery,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"deliveries/(?P<delivery_id>[^/.]+)/approve-publication",
+    )
+    def approve_delivery_publication(self, request, pk=None, delivery_id=None):
+        order = self.get_object()
+        delivery = self._get_order_delivery(order, delivery_id)
+
+        if not (
+            order.client_id == request.user.id
+            or self._is_publication_manager(request.user)
+        ):
+            raise PermissionDenied(
+                "Only the order owner or publication managers can approve publication."
+            )
+
+        if delivery.publication_status != OrderDelivery.PublicationStatus.REQUESTED:
+            return Response(
+                {"detail": "Only requested deliveries can be approved for publication."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get("note", "")
+        delivery.approve_publication(
+            reviewed_by=request.user,
+            note=note,
+        )
+
+        serializer = OrderDeliverySerializer(
+            delivery,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"deliveries/(?P<delivery_id>[^/.]+)/reject-publication",
+    )
+    def reject_delivery_publication(self, request, pk=None, delivery_id=None):
+        order = self.get_object()
+        delivery = self._get_order_delivery(order, delivery_id)
+
+        if not (
+            order.client_id == request.user.id
+            or self._is_publication_manager(request.user)
+        ):
+            raise PermissionDenied(
+                "Only the order owner or publication managers can reject publication."
+            )
+
+        if delivery.publication_status != OrderDelivery.PublicationStatus.REQUESTED:
+            return Response(
+                {"detail": "Only requested deliveries can be rejected for publication."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        note = request.data.get("note", "")
+        delivery.reject_publication(
+            reviewed_by=request.user,
+            note=note,
+        )
+
+        serializer = OrderDeliverySerializer(
+            delivery,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     @extend_schema(
         tags=["Order Dashboard"],
         summary="Get order count grouped by status",
