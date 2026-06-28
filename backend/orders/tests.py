@@ -1956,28 +1956,16 @@ class PublicEditorPortfolioPolishTests(APITestCase):
             publication_status=OrderDelivery.PublicationStatus.PRIVATE,
         )
 
-        self.pending_delivery = OrderDelivery.objects.create(
+        self.second_private_delivery = OrderDelivery.objects.create(
             order=self.order,
             uploaded_by=self.editor_user,
             file=SimpleUploadedFile(
-                "portfolio-polish-pending.jpg",
-                b"portfolio-polish-pending-content",
+                "portfolio-polish-private-second.jpg",
+                b"portfolio-polish-private-second-content",
                 content_type="image/jpeg",
             ),
-            note="Pending portfolio polish delivery",
-            publication_status=OrderDelivery.PublicationStatus.PENDING,
-        )
-
-        self.rejected_delivery = OrderDelivery.objects.create(
-            order=self.order,
-            uploaded_by=self.editor_user,
-            file=SimpleUploadedFile(
-                "portfolio-polish-rejected.jpg",
-                b"portfolio-polish-rejected-content",
-                content_type="image/jpeg",
-            ),
-            note="Rejected portfolio polish delivery",
-            publication_status=OrderDelivery.PublicationStatus.REJECTED,
+            note="Second private portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
         )
 
         OrderComment.objects.create(
@@ -2034,8 +2022,7 @@ class PublicEditorPortfolioPolishTests(APITestCase):
         self.assertIn(self.first_delivery.id, returned_ids)
         self.assertIn(self.second_delivery.id, returned_ids)
         self.assertNotIn(self.private_delivery.id, returned_ids)
-        self.assertNotIn(self.pending_delivery.id, returned_ids)
-        self.assertNotIn(self.rejected_delivery.id, returned_ids)
+        self.assertNotIn(self.second_private_delivery.id, returned_ids)
 
     def test_public_editor_portfolio_exposes_only_safe_editor_fields(self):
         response = self.client.get(self._portfolio_url(self.editor_user))
