@@ -11,7 +11,7 @@ from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Sum
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -68,6 +68,7 @@ from .serializers import (
     OrderNotificationSerializer,
     PublicOrderDeliverySerializer,
     PublicOrderDeliveryDetailSerializer,
+    PublicEditorPortfolioSerializer,
 )
 
 User = get_user_model()
@@ -179,6 +180,26 @@ class OrderViewSet(viewsets.ModelViewSet):
             {
                 field_name: "Invalid date/datetime format. Use YYYY-MM-DD or ISO datetime."
             }
+        )
+    
+    def _get_public_deliveries_queryset(self):
+        return (
+            OrderDelivery.objects.select_related(
+                "order",
+                "uploaded_by",
+            )
+            .filter(
+                publication_status=OrderDelivery.PublicationStatus.APPROVED,
+            )
+            .annotate(
+                public_comments_count=Count(
+                    "comments",
+                    filter=Q(
+                        comments__status=OrderComment.Status.APPROVED,
+                        comments__target_type=OrderComment.TargetType.DELIVERY,
+                    ),
+                )
+            )
         )
 
     def _apply_order_filters(self, queryset):
@@ -1440,15 +1461,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
-
-    
     @extend_schema(
         tags=["Public Deliveries"],
         summary="List public order deliveries",
         description=(
             "Returns deliveries that have been approved for publication. "
             "This endpoint can be used for public gallery or portfolio pages. "
-            "Supports filtering by editor, editor username, order and text search."
+            "Supports filtering by editor, editor username, order and text search. "
+            "Supports pagination when DRF pagination is enabled."
         ),
         parameters=[
             OpenApiParameter(
@@ -1479,6 +1499,20 @@ class OrderViewSet(viewsets.ModelViewSet):
                 required=False,
                 description="Search in order title, delivery note and uploader username.",
             ),
+            OpenApiParameter(
+                "page",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Page number when pagination is enabled.",
+            ),
+            OpenApiParameter(
+                "page_size",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Page size when pagination is enabled.",
+            ),
         ],
         responses={200: PublicOrderDeliverySerializer(many=True)},
     )
@@ -1489,24 +1523,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         permission_classes=[permissions.AllowAny],
     )
     def public_deliveries(self, request):
-        deliveries = (
-            OrderDelivery.objects.select_related(
-                "order",
-                "uploaded_by",
-            )
-            .filter(
-                publication_status=OrderDelivery.PublicationStatus.APPROVED,
-            )
-            .annotate(
-                public_comments_count=Count(
-                    "comments",
-                    filter=Q(
-                        comments__status=OrderComment.Status.APPROVED,
-                        comments__target_type=OrderComment.TargetType.DELIVERY,
-                    ),
-                )
-            )
-        )
+        deliveries = self._get_public_deliveries_queryset()
 
         editor_id = request.query_params.get("editor")
         if editor_id:
@@ -1535,6 +1552,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             "-uploaded_at",
         )
 
+        page = self.paginate_queryset(deliveries)
+        if page is not None:
+            serializer = PublicOrderDeliverySerializer(
+                page,
+                many=True,
+                context={"request": request},
+            )
+            return self.get_paginated_response(serializer.data)
+
         serializer = PublicOrderDeliverySerializer(
             deliveries,
             many=True,
@@ -1542,7 +1568,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-
     @extend_schema(
         tags=["Public Deliveries"],
         summary="Retrieve public order delivery detail",
@@ -1564,10 +1589,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     def public_delivery_detail(self, request, delivery_id=None):
         try:
             delivery = (
-                OrderDelivery.objects.select_related(
-                    "order",
-                    "uploaded_by",
-                )
+                self._get_public_deliveries_queryset()
                 .prefetch_related(
                     "comments",
                     "comments__sender",
@@ -1575,19 +1597,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "comments__parent",
                     "comments__parent__sender",
                 )
-                .annotate(
-                    public_comments_count=Count(
-                        "comments",
-                        filter=Q(
-                            comments__status=OrderComment.Status.APPROVED,
-                            comments__target_type=OrderComment.TargetType.DELIVERY,
-                        ),
-                    )
-                )
-                .get(
-                    id=delivery_id,
-                    publication_status=OrderDelivery.PublicationStatus.APPROVED,
-                )
+                .get(id=delivery_id)
             )
         except OrderDelivery.DoesNotExist:
             return Response(
@@ -1600,6 +1610,116 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+    @extend_schema(
+        tags=["Public Deliveries"],
+        summary="Retrieve public editor portfolio",
+        description=(
+            "Returns public portfolio data for an editor, including editor public info, "
+            "public delivery statistics and approved public deliveries."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "page",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Page number for deliveries when pagination is enabled. "
+                    "If pagination is enabled, the deliveries key contains paginated results."
+                ),
+            ),
+            OpenApiParameter(
+                "page_size",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Page size for deliveries when pagination is enabled.",
+            ),
+        ],
+        responses={
+            200: PublicEditorPortfolioSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"public-editors/(?P<editor_id>[^/.]+)/portfolio",
+        permission_classes=[permissions.AllowAny],
+    )
+    def public_editor_portfolio(self, request, editor_id=None):
+        User = get_user_model()
+
+        try:
+            editor = User.objects.get(id=editor_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Editor not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        deliveries = (
+            self._get_public_deliveries_queryset()
+            .filter(uploaded_by=editor)
+            .order_by(
+                "-publication_reviewed_at",
+                "-uploaded_at",
+            )
+        )
+
+        stats = deliveries.aggregate(
+            public_deliveries_count=Count("id"),
+            public_comments_count=Sum("public_comments_count"),
+        )
+        stats["public_comments_count"] = stats["public_comments_count"] or 0
+
+        editor_data = {
+            "id": editor.id,
+            "username": editor.username,
+            "first_name": editor.first_name,
+            "last_name": editor.last_name,
+        }
+
+        page = self.paginate_queryset(deliveries)
+        if page is not None:
+            deliveries_serializer = PublicOrderDeliverySerializer(
+                page,
+                many=True,
+                context={"request": request},
+            )
+
+            return Response(
+                {
+                    "editor": editor_data,
+                    "stats": stats,
+                    "deliveries": self.get_paginated_response(
+                        deliveries_serializer.data
+                    ).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        deliveries_serializer = PublicOrderDeliverySerializer(
+            deliveries,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(
+            {
+                "editor": editor_data,
+                "stats": stats,
+                "deliveries": deliveries_serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+    
+
+
+
+
     
     
     @extend_schema(

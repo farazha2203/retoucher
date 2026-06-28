@@ -527,6 +527,22 @@ class PublicOrderDeliveryDetailSerializer(PublicOrderDeliverySerializer):
             many=True,
             context=self.context,
         ).data
+    
+class PublicEditorPortfolioUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    first_name = serializers.CharField(allow_blank=True)
+    last_name = serializers.CharField(allow_blank=True)
+
+class PublicEditorPortfolioStatsSerializer(serializers.Serializer):
+    public_deliveries_count = serializers.IntegerField()
+    public_comments_count = serializers.IntegerField()
+
+
+class PublicEditorPortfolioSerializer(serializers.Serializer):
+    editor = PublicEditorPortfolioUserSerializer()
+    stats = serializers.DictField()
+    deliveries = PublicOrderDeliverySerializer(many=True)
 
 
 class OrderStatusHistorySerializer(serializers.ModelSerializer):

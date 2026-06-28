@@ -1652,3 +1652,235 @@ class PublicOrderDeliveryCommentCountAnnotationTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["public_comments_count"], 1)
+
+class PublicOrderDeliveryPaginationBehaviorTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-pagination-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="public-pagination-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Public Pagination Order",
+            description="Testing public deliveries pagination behavior",
+            status=Order.Status.DELIVERED,
+        )
+
+        for index in range(3):
+            OrderDelivery.objects.create(
+                order=self.order,
+                uploaded_by=self.editor_user,
+                file=SimpleUploadedFile(
+                    f"public-pagination-{index}.jpg",
+                    f"public-pagination-content-{index}".encode(),
+                    content_type="image/jpeg",
+                ),
+                note=f"Public pagination delivery {index}",
+                publication_status=OrderDelivery.PublicationStatus.APPROVED,
+            )
+
+    def _public_deliveries_url(self):
+        return reverse("orders-public-deliveries")
+
+    def test_public_deliveries_accepts_pagination_query_params(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {
+                "page": 1,
+                "page_size": 2,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        if isinstance(response.data, dict) and "results" in response.data:
+            self.assertIn("count", response.data)
+            self.assertIn("results", response.data)
+            self.assertLessEqual(len(response.data["results"]), 2)
+        else:
+            self.assertEqual(len(response.data), 3)
+
+class PublicEditorPortfolioAPITests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="portfolio-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="portfolio-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Portfolio",
+            last_name="Editor",
+        )
+        self.other_editor = User.objects.create_user(
+            username="portfolio-other-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Main Order",
+            description="Testing editor portfolio",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.other_order = Order.objects.create(
+            client=self.client_user,
+            editor=self.other_editor,
+            title="Portfolio Other Order",
+            description="Testing other editor portfolio",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery_one = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-public-one.jpg",
+                b"portfolio-public-one-content",
+                content_type="image/jpeg",
+            ),
+            note="Portfolio public delivery one",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.public_delivery_two = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-public-two.jpg",
+                b"portfolio-public-two-content",
+                content_type="image/jpeg",
+            ),
+            note="Portfolio public delivery two",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-private.jpg",
+                b"portfolio-private-content",
+                content_type="image/jpeg",
+            ),
+            note="Portfolio private delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        self.other_editor_delivery = OrderDelivery.objects.create(
+            order=self.other_order,
+            uploaded_by=self.other_editor,
+            file=SimpleUploadedFile(
+                "portfolio-other-editor.jpg",
+                b"portfolio-other-editor-content",
+                content_type="image/jpeg",
+            ),
+            note="Other editor public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery_one,
+            text="Approved portfolio comment one",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery_one,
+            text="Approved portfolio comment two",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery_two,
+            text="Active portfolio comment not public",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+    def _portfolio_url(self, editor):
+        return reverse(
+            "orders-public-editor-portfolio",
+            kwargs={"editor_id": editor.id},
+        )
+
+    def test_anonymous_user_can_retrieve_public_editor_portfolio(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_public_editor_portfolio_contains_editor_info(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(response.data["editor"]["id"], self.editor_user.id)
+        self.assertEqual(
+            response.data["editor"]["username"],
+            self.editor_user.username,
+        )
+        self.assertEqual(response.data["editor"]["first_name"], "Portfolio")
+        self.assertEqual(response.data["editor"]["last_name"], "Editor")
+
+    def test_public_editor_portfolio_returns_only_editor_public_deliveries(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        deliveries = response.data["deliveries"]
+
+        if isinstance(deliveries, dict) and "results" in deliveries:
+            delivery_items = deliveries["results"]
+        else:
+            delivery_items = deliveries
+
+        returned_ids = {item["id"] for item in delivery_items}
+
+        self.assertIn(self.public_delivery_one.id, returned_ids)
+        self.assertIn(self.public_delivery_two.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertNotIn(self.other_editor_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 2)
+
+    def test_public_editor_portfolio_contains_stats(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(response.data["stats"]["public_deliveries_count"], 2)
+        self.assertEqual(response.data["stats"]["public_comments_count"], 2)
+
+    def test_public_editor_portfolio_returns_404_for_missing_editor(self):
+        response = self.client.get(
+            reverse(
+                "orders-public-editor-portfolio",
+                kwargs={"editor_id": 999999},
+            )
+        )
+
+        self.assertEqual(response.status_code, 404)
