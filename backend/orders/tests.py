@@ -1091,3 +1091,145 @@ class PublicOrderDeliveryAPITests(APITestCase):
             OrderDelivery.PublicationStatus.APPROVED,
         )
         self.assertTrue(item["is_public"])
+
+class PublicOrderDeliveryDetailAPITests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-delivery-detail-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="public-delivery-detail-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Public Delivery Detail Order",
+            description="Testing public delivery detail endpoint",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "public-detail-delivery.jpg",
+                b"public-detail-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Approved public delivery detail",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "private-detail-delivery.jpg",
+                b"private-detail-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Private delivery detail",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+    def _public_delivery_detail_url(self, delivery):
+        return reverse(
+            "orders-public-delivery-detail",
+            kwargs={"delivery_id": delivery.id},
+        )
+
+    def test_anonymous_user_can_retrieve_public_delivery_detail(self):
+        response = self.client.get(
+            self._public_delivery_detail_url(self.public_delivery)
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_private_delivery_detail_returns_404(self):
+        response = self.client.get(
+            self._public_delivery_detail_url(self.private_delivery)
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_public_delivery_detail_contains_public_comments_only(self):
+        public_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved public comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        active_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Active private comment",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        deleted_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Deleted comment",
+            status=OrderComment.Status.DELETED,
+        )
+
+        order_level_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.ORDER,
+            text="Order level approved comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        response = self.client.get(
+            self._public_delivery_detail_url(self.public_delivery)
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {
+            item["id"]
+            for item in response.data["public_comments"]
+        }
+
+        self.assertIn(public_comment.id, returned_ids)
+        self.assertNotIn(active_comment.id, returned_ids)
+        self.assertNotIn(deleted_comment.id, returned_ids)
+        self.assertNotIn(order_level_comment.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_public_delivery_detail_response_contains_delivery_fields(self):
+        response = self.client.get(
+            self._public_delivery_detail_url(self.public_delivery)
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(response.data["id"], self.public_delivery.id)
+        self.assertEqual(response.data["order"], self.order.id)
+        self.assertEqual(response.data["order_title"], self.order.title)
+        self.assertEqual(response.data["uploaded_by"], self.editor_user.id)
+        self.assertEqual(
+            response.data["uploaded_by_username"],
+            self.editor_user.username,
+        )
+        self.assertEqual(
+            response.data["publication_status"],
+            OrderDelivery.PublicationStatus.APPROVED,
+        )
+        self.assertTrue(response.data["is_public"])
+        self.assertIn("public_comments", response.data)

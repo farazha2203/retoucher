@@ -66,6 +66,7 @@ from .serializers import (
     OrderStatusHistorySerializer,
     OrderNotificationSerializer,
     PublicOrderDeliverySerializer,
+    PublicOrderDeliveryDetailSerializer,
 )
 
 User = get_user_model()
@@ -1437,6 +1438,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+
+    
     @extend_schema(
         tags=["Public Deliveries"],
         summary="List public order deliveries",
@@ -1473,6 +1477,57 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+    @extend_schema(
+        tags=["Public Deliveries"],
+        summary="Retrieve public order delivery detail",
+        description=(
+            "Returns detail of a delivery that has been approved for publication, "
+            "including publicly visible approved comments for that delivery."
+        ),
+        responses={
+            200: PublicOrderDeliveryDetailSerializer,
+            404: DetailResponseSerializer,
+        },
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=r"public-deliveries/(?P<delivery_id>[^/.]+)",
+        permission_classes=[permissions.AllowAny],
+    )
+    def public_delivery_detail(self, request, delivery_id=None):
+        try:
+            delivery = (
+                OrderDelivery.objects.select_related(
+                    "order",
+                    "uploaded_by",
+                )
+                .prefetch_related(
+                    "comments",
+                    "comments__sender",
+                    "comments__resolved_by",
+                    "comments__parent",
+                    "comments__parent__sender",
+                )
+                .get(
+                    id=delivery_id,
+                    publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                )
+            )
+        except OrderDelivery.DoesNotExist:
+            return Response(
+                {"detail": "Public delivery not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = PublicOrderDeliveryDetailSerializer(
+            delivery,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
     
     @extend_schema(
         methods=["GET"],

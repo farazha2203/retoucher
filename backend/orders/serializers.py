@@ -133,6 +133,8 @@ class PublicOrderDeliverySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+
+
 class OrderRevisionSerializer(serializers.ModelSerializer):
     requested_by_username = serializers.CharField(
         source="requested_by.username",
@@ -474,6 +476,39 @@ class OrderCommentThreadSerializer(OrderCommentSerializer):
 
         return OrderCommentThreadSerializer(
             replies,
+            many=True,
+            context=self.context,
+        ).data
+    
+class PublicOrderDeliveryDetailSerializer(PublicOrderDeliverySerializer):
+    public_comments = serializers.SerializerMethodField()
+
+    class Meta(PublicOrderDeliverySerializer.Meta):
+        fields = PublicOrderDeliverySerializer.Meta.fields + (
+            "public_comments",
+        )
+
+    @extend_schema_field(OrderCommentSerializer(many=True))
+    def get_public_comments(self, obj):
+        comments = (
+            obj.comments.select_related(
+                "sender",
+                "resolved_by",
+                "parent",
+                "parent__sender",
+                "delivery",
+            )
+            .filter(
+                status=OrderComment.Status.APPROVED,
+                target_type=OrderComment.TargetType.DELIVERY,
+                delivery=obj,
+            )
+            .exclude(status=OrderComment.Status.DELETED)
+            .order_by("created_at")
+        )
+
+        return OrderCommentSerializer(
+            comments,
             many=True,
             context=self.context,
         ).data
