@@ -1584,7 +1584,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-
+    
     @extend_schema(
         tags=["Public Deliveries"],
         summary="Retrieve public editor portfolio",
@@ -1592,6 +1592,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             "Returns public portfolio data for an editor, including editor public info, "
             "public delivery statistics and approved public deliveries."
         ),
+        parameters=[
+            OpenApiParameter(
+                "ordering",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "Ordering mode for deliveries. "
+                    "Allowed values: newest, oldest, most_commented. "
+                    "Defaults to newest."
+                ),
+            ),
+        ],
         responses={
             200: PublicEditorPortfolioSerializer,
             404: DetailResponseSerializer,
@@ -1614,14 +1627,35 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        deliveries = (
-            self._get_public_deliveries_queryset()
-            .filter(uploaded_by=editor)
-            .order_by(
+        editor_role = getattr(editor, "role", None)
+        if editor_role != "editor":
+            return Response(
+                {"detail": "Editor not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        deliveries = self._get_public_deliveries_queryset().filter(
+            uploaded_by=editor
+        )
+
+        ordering = request.query_params.get("ordering", "newest")
+
+        if ordering == "oldest":
+            deliveries = deliveries.order_by(
+                "publication_reviewed_at",
+                "uploaded_at",
+            )
+        elif ordering == "most_commented":
+            deliveries = deliveries.order_by(
+                "-public_comments_count",
                 "-publication_reviewed_at",
                 "-uploaded_at",
             )
-        )
+        else:
+            deliveries = deliveries.order_by(
+                "-publication_reviewed_at",
+                "-uploaded_at",
+            )
 
         stats = {
             "public_deliveries_count": deliveries.count(),
@@ -1654,6 +1688,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+
 
     @extend_schema(
         methods=["GET"],

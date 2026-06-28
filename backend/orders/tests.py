@@ -1884,3 +1884,193 @@ class PublicEditorPortfolioAPITests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+class PublicEditorPortfolioPolishTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="portfolio-polish-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="portfolio-polish-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Safe",
+            last_name="Editor",
+        )
+        self.empty_editor = User.objects.create_user(
+            username="portfolio-empty-editor",
+            password="pass12345",
+            role="editor",
+        )
+        self.non_editor_user = User.objects.create_user(
+            username="portfolio-non-editor",
+            password="pass12345",
+            role="client",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Polish Order",
+            description="Testing portfolio polish behavior",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.first_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-polish-first.jpg",
+                b"portfolio-polish-first-content",
+                content_type="image/jpeg",
+            ),
+            note="First portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.second_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-polish-second.jpg",
+                b"portfolio-polish-second-content",
+                content_type="image/jpeg",
+            ),
+            note="Second portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-polish-private.jpg",
+                b"portfolio-polish-private-content",
+                content_type="image/jpeg",
+            ),
+            note="Private portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        self.pending_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-polish-pending.jpg",
+                b"portfolio-polish-pending-content",
+                content_type="image/jpeg",
+            ),
+            note="Pending portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.PENDING,
+        )
+
+        self.rejected_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-polish-rejected.jpg",
+                b"portfolio-polish-rejected-content",
+                content_type="image/jpeg",
+            ),
+            note="Rejected portfolio polish delivery",
+            publication_status=OrderDelivery.PublicationStatus.REJECTED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.second_delivery,
+            text="Approved comment one",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.second_delivery,
+            text="Approved comment two",
+            status=OrderComment.Status.APPROVED,
+        )
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.first_delivery,
+            text="Approved comment three",
+            status=OrderComment.Status.APPROVED,
+        )
+
+    def _portfolio_url(self, editor):
+        return reverse(
+            "orders-public-editor-portfolio",
+            kwargs={"editor_id": editor.id},
+        )
+
+    def test_public_editor_portfolio_returns_404_for_non_editor_user(self):
+        response = self.client.get(self._portfolio_url(self.non_editor_user))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_public_editor_portfolio_allows_editor_with_no_public_deliveries(self):
+        response = self.client.get(self._portfolio_url(self.empty_editor))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["stats"]["public_deliveries_count"], 0)
+        self.assertEqual(response.data["stats"]["public_comments_count"], 0)
+        self.assertEqual(response.data["deliveries"], [])
+
+    def test_public_editor_portfolio_does_not_expose_non_public_deliveries(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data["deliveries"]}
+
+        self.assertIn(self.first_delivery.id, returned_ids)
+        self.assertIn(self.second_delivery.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertNotIn(self.pending_delivery.id, returned_ids)
+        self.assertNotIn(self.rejected_delivery.id, returned_ids)
+
+    def test_public_editor_portfolio_exposes_only_safe_editor_fields(self):
+        response = self.client.get(self._portfolio_url(self.editor_user))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(
+            set(response.data["editor"].keys()),
+            {"id", "username", "first_name", "last_name"},
+        )
+
+    def test_public_editor_portfolio_supports_most_commented_ordering(self):
+        response = self.client.get(
+            self._portfolio_url(self.editor_user),
+            {"ordering": "most_commented"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        delivery_ids = [item["id"] for item in response.data["deliveries"]]
+
+        self.assertEqual(delivery_ids[0], self.second_delivery.id)
+        self.assertEqual(delivery_ids[1], self.first_delivery.id)
+
+    def test_public_editor_portfolio_supports_oldest_ordering(self):
+        response = self.client.get(
+            self._portfolio_url(self.editor_user),
+            {"ordering": "oldest"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        delivery_ids = [item["id"] for item in response.data["deliveries"]]
+
+        self.assertEqual(
+            set(delivery_ids),
+            {self.first_delivery.id, self.second_delivery.id},
+        )
