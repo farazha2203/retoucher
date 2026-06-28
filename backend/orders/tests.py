@@ -2361,3 +2361,202 @@ class PublicEditorPortfolioResponsePolishTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["meta"]["ordering"], "newest")
+
+class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="portfolio-contract-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="portfolio-contract-editor",
+            password="pass12345",
+            role="editor",
+            first_name="Contract",
+            last_name="Editor",
+        )
+        self.empty_editor = User.objects.create_user(
+            username="portfolio-contract-empty-editor",
+            password="pass12345",
+            role="editor",
+        )
+        self.non_editor_user = User.objects.create_user(
+            username="portfolio-contract-non-editor",
+            password="pass12345",
+            role="client",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Portfolio Contract Order",
+            description="Order used for portfolio contract tests",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-contract-public.jpg",
+                b"portfolio-contract-public-content",
+                content_type="image/jpeg",
+            ),
+            note="Public delivery for portfolio contract",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "portfolio-contract-private.jpg",
+                b"portfolio-contract-private-content",
+                content_type="image/jpeg",
+            ),
+            note="Private delivery should not appear in public portfolio",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        OrderRating.objects.create(
+            order=self.order,
+            rated_by=self.client_user,
+            source="client",
+            score=5,
+            comment="Great public portfolio contract work",
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved public contract comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+    def _portfolio_url(self, editor_id):
+        return reverse(
+            "orders-public-editor-portfolio",
+            kwargs={"editor_id": editor_id},
+        )
+
+    def test_public_editor_portfolio_response_contract_top_level_keys(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data.keys()),
+            {"editor", "stats", "rating", "meta", "deliveries"},
+        )
+
+    def test_public_editor_portfolio_response_contract_editor_keys(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data["editor"].keys()),
+            {"id", "username", "first_name", "last_name"},
+        )
+
+    def test_public_editor_portfolio_response_contract_stats_keys(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data["stats"].keys()),
+            {
+                "public_deliveries_count",
+                "public_comments_count",
+                "public_orders_count",
+            },
+        )
+
+    def test_public_editor_portfolio_response_contract_rating_keys(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data["rating"].keys()),
+            {"average", "count"},
+        )
+
+    def test_public_editor_portfolio_response_contract_meta_keys(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data["meta"].keys()),
+            {"ordering", "available_orderings"},
+        )
+
+    def test_public_editor_portfolio_empty_editor_contract(self):
+        response = self.client.get(self._portfolio_url(self.empty_editor.id))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(
+            response.data["stats"],
+            {
+                "public_deliveries_count": 0,
+                "public_comments_count": 0,
+                "public_orders_count": 0,
+            },
+        )
+        self.assertEqual(
+            response.data["rating"],
+            {
+                "average": 0,
+                "count": 0,
+            },
+        )
+        self.assertEqual(
+            response.data["meta"],
+            {
+                "ordering": "newest",
+                "available_orderings": [
+                    "newest",
+                    "oldest",
+                    "most_commented",
+                ],
+            },
+        )
+        self.assertEqual(response.data["deliveries"], [])
+
+    def test_public_editor_portfolio_unknown_editor_returns_404(self):
+        response = self.client.get(self._portfolio_url(999999))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["detail"], "Editor not found.")
+
+    def test_public_editor_portfolio_non_editor_returns_404(self):
+        response = self.client.get(self._portfolio_url(self.non_editor_user.id))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data["detail"], "Editor not found.")
+
+    def test_public_editor_portfolio_invalid_ordering_keeps_contract(self):
+        response = self.client.get(
+            self._portfolio_url(self.editor_user.id),
+            {"ordering": "bad-value"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["meta"]["ordering"], "newest")
+        self.assertEqual(
+            response.data["meta"]["available_orderings"],
+            ["newest", "oldest", "most_commented"],
+        )
+
+    def test_public_editor_portfolio_does_not_expose_private_delivery_in_contract(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+
+        delivery_ids = {item["id"] for item in response.data["deliveries"]}
+
+        self.assertIn(self.public_delivery.id, delivery_ids)
+        self.assertNotIn(self.private_delivery.id, delivery_ids)

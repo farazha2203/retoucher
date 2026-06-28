@@ -1603,11 +1603,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        tags=["Public Deliveries"],
+        tags=["Public Portfolio"],
         summary="Retrieve public editor portfolio",
         description=(
-            "Returns public portfolio data for an editor, including editor public info, "
-            "public delivery statistics and approved public deliveries."
+            "Returns a public portfolio for an editor. "
+            "The response includes safe public editor identity fields, public portfolio stats, "
+            "public rating summary, response metadata, and approved public deliveries. "
+            "Only approved/public deliveries are included. Private deliveries and ratings from "
+            "orders without public deliveries are excluded."
         ),
         parameters=[
             OpenApiParameter(
@@ -1616,16 +1619,105 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OpenApiParameter.QUERY,
                 required=False,
                 description=(
-                    "Ordering mode for deliveries. "
+                    "Ordering mode for portfolio deliveries. "
                     "Allowed values: newest, oldest, most_commented. "
-                    "Defaults to newest."
+                    "Invalid values fall back to newest."
                 ),
+                examples=[
+                    OpenApiExample(
+                        "Newest first",
+                        value="newest",
+                        description="Sort public deliveries from newest to oldest.",
+                    ),
+                    OpenApiExample(
+                        "Oldest first",
+                        value="oldest",
+                        description="Sort public deliveries from oldest to newest.",
+                    ),
+                    OpenApiExample(
+                        "Most commented",
+                        value="most_commented",
+                        description="Sort public deliveries by public approved comments count.",
+                    ),
+                ],
             ),
         ],
         responses={
             200: PublicEditorPortfolioSerializer,
             404: DetailResponseSerializer,
         },
+        examples=[
+            OpenApiExample(
+                "Public portfolio response",
+                value={
+                    "editor": {
+                        "id": 12,
+                        "username": "retouch_editor",
+                        "first_name": "Ali",
+                        "last_name": "Ahmadi",
+                    },
+                    "stats": {
+                        "public_deliveries_count": 2,
+                        "public_comments_count": 4,
+                        "public_orders_count": 2,
+                    },
+                    "rating": {
+                        "average": 4.5,
+                        "count": 2,
+                    },
+                    "meta": {
+                        "ordering": "newest",
+                        "available_orderings": [
+                            "newest",
+                            "oldest",
+                            "most_commented",
+                        ],
+                    },
+                    "deliveries": [],
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Empty public portfolio response",
+                value={
+                    "editor": {
+                        "id": 13,
+                        "username": "new_editor",
+                        "first_name": "",
+                        "last_name": "",
+                    },
+                    "stats": {
+                        "public_deliveries_count": 0,
+                        "public_comments_count": 0,
+                        "public_orders_count": 0,
+                    },
+                    "rating": {
+                        "average": 0,
+                        "count": 0,
+                    },
+                    "meta": {
+                        "ordering": "newest",
+                        "available_orderings": [
+                            "newest",
+                            "oldest",
+                            "most_commented",
+                        ],
+                    },
+                    "deliveries": [],
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Editor not found",
+                value={
+                    "detail": "Editor not found.",
+                },
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
     )
     @action(
         detail=False,
