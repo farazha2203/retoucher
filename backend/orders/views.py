@@ -11,6 +11,7 @@ from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -1446,8 +1447,39 @@ class OrderViewSet(viewsets.ModelViewSet):
         summary="List public order deliveries",
         description=(
             "Returns deliveries that have been approved for publication. "
-            "This endpoint can be used for public gallery or portfolio pages."
+            "This endpoint can be used for public gallery or portfolio pages. "
+            "Supports filtering by editor, editor username, order and text search."
         ),
+        parameters=[
+            OpenApiParameter(
+                "editor",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by editor/user id who uploaded the delivery.",
+            ),
+            OpenApiParameter(
+                "editor_username",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by uploader/editor username, case-insensitive contains.",
+            ),
+            OpenApiParameter(
+                "order",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Filter by order id.",
+            ),
+            OpenApiParameter(
+                "search",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Search in order title, delivery note and uploader username.",
+            ),
+        ],
         responses={200: PublicOrderDeliverySerializer(many=True)},
     )
     @action(
@@ -1465,10 +1497,33 @@ class OrderViewSet(viewsets.ModelViewSet):
             .filter(
                 publication_status=OrderDelivery.PublicationStatus.APPROVED,
             )
-            .order_by(
-                "-publication_reviewed_at",
-                "-uploaded_at",
+        )
+
+        editor_id = request.query_params.get("editor")
+        if editor_id:
+            deliveries = deliveries.filter(uploaded_by_id=editor_id)
+
+        editor_username = request.query_params.get("editor_username")
+        if editor_username:
+            deliveries = deliveries.filter(
+                uploaded_by__username__icontains=editor_username
             )
+
+        order_id = request.query_params.get("order")
+        if order_id:
+            deliveries = deliveries.filter(order_id=order_id)
+
+        search = request.query_params.get("search")
+        if search:
+            deliveries = deliveries.filter(
+                Q(order__title__icontains=search)
+                | Q(note__icontains=search)
+                | Q(uploaded_by__username__icontains=search)
+            )
+
+        deliveries = deliveries.order_by(
+            "-publication_reviewed_at",
+            "-uploaded_at",
         )
 
         serializer = PublicOrderDeliverySerializer(

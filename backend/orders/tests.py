@@ -1233,3 +1233,168 @@ class PublicOrderDeliveryDetailAPITests(APITestCase):
         )
         self.assertTrue(response.data["is_public"])
         self.assertIn("public_comments", response.data)
+
+class PublicOrderDeliveryFilterAPITests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-filter-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_one = User.objects.create_user(
+            username="filter-editor-one",
+            password="pass12345",
+            role="editor",
+        )
+        self.editor_two = User.objects.create_user(
+            username="filter-editor-two",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order_one = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_one,
+            title="Beauty Portrait Retouch",
+            description="Testing public delivery filters",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.order_two = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_two,
+            title="Product Photo Cleanup",
+            description="Testing second public delivery filter",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.delivery_one = OrderDelivery.objects.create(
+            order=self.order_one,
+            uploaded_by=self.editor_one,
+            file=SimpleUploadedFile(
+                "beauty-retouch.jpg",
+                b"beauty-retouch-content",
+                content_type="image/jpeg",
+            ),
+            note="Soft skin retouch sample",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.delivery_two = OrderDelivery.objects.create(
+            order=self.order_two,
+            uploaded_by=self.editor_two,
+            file=SimpleUploadedFile(
+                "product-cleanup.jpg",
+                b"product-cleanup-content",
+                content_type="image/jpeg",
+            ),
+            note="White background product cleanup",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order_one,
+            uploaded_by=self.editor_two,
+            file=SimpleUploadedFile(
+                "private-filter.jpg",
+                b"private-filter-content",
+                content_type="image/jpeg",
+            ),
+            note="Private hidden delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+    def _public_deliveries_url(self):
+        return reverse("orders-public-deliveries")
+
+    def test_filter_public_deliveries_by_editor_id(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"editor": self.editor_one.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_filter_public_deliveries_by_editor_username(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"editor_username": "editor-two"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_filter_public_deliveries_by_order_id(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"order": self.order_one.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_search_public_deliveries_by_order_title(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"search": "beauty"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_search_public_deliveries_by_note(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"search": "product cleanup"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_search_public_deliveries_by_editor_username(self):
+        response = self.client.get(
+            self._public_deliveries_url(),
+            {"search": "filter-editor-one"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.delivery_one.id, returned_ids)
+        self.assertNotIn(self.delivery_two.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
