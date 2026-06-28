@@ -11,7 +11,7 @@ from rest_framework import filters
 from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -38,7 +38,6 @@ from .api_docs import (
     RatingRequestSerializer,
     SettlementSummarySerializer,
     StatusSummaryItemSerializer,
-    
 )
 
 
@@ -181,7 +180,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 field_name: "Invalid date/datetime format. Use YYYY-MM-DD or ISO datetime."
             }
         )
-    
+
     def _get_public_deliveries_queryset(self):
         return (
             OrderDelivery.objects.select_related(
@@ -1459,7 +1458,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
 
     @extend_schema(
         tags=["Public Deliveries"],
@@ -1467,8 +1465,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         description=(
             "Returns deliveries that have been approved for publication. "
             "This endpoint can be used for public gallery or portfolio pages. "
-            "Supports filtering by editor, editor username, order and text search. "
-            "Supports pagination when DRF pagination is enabled."
+            "Supports filtering by editor, editor username, order and text search."
         ),
         parameters=[
             OpenApiParameter(
@@ -1498,20 +1495,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OpenApiParameter.QUERY,
                 required=False,
                 description="Search in order title, delivery note and uploader username.",
-            ),
-            OpenApiParameter(
-                "page",
-                OpenApiTypes.INT,
-                OpenApiParameter.QUERY,
-                required=False,
-                description="Page number when pagination is enabled.",
-            ),
-            OpenApiParameter(
-                "page_size",
-                OpenApiTypes.INT,
-                OpenApiParameter.QUERY,
-                required=False,
-                description="Page size when pagination is enabled.",
             ),
         ],
         responses={200: PublicOrderDeliverySerializer(many=True)},
@@ -1552,22 +1535,13 @@ class OrderViewSet(viewsets.ModelViewSet):
             "-uploaded_at",
         )
 
-        page = self.paginate_queryset(deliveries)
-        if page is not None:
-            serializer = PublicOrderDeliverySerializer(
-                page,
-                many=True,
-                context={"request": request},
-            )
-            return self.get_paginated_response(serializer.data)
-
         serializer = PublicOrderDeliverySerializer(
             deliveries,
             many=True,
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
+
     @extend_schema(
         tags=["Public Deliveries"],
         summary="Retrieve public order delivery detail",
@@ -1610,7 +1584,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             context={"request": request},
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
 
     @extend_schema(
         tags=["Public Deliveries"],
@@ -1619,25 +1592,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             "Returns public portfolio data for an editor, including editor public info, "
             "public delivery statistics and approved public deliveries."
         ),
-        parameters=[
-            OpenApiParameter(
-                "page",
-                OpenApiTypes.INT,
-                OpenApiParameter.QUERY,
-                required=False,
-                description=(
-                    "Page number for deliveries when pagination is enabled. "
-                    "If pagination is enabled, the deliveries key contains paginated results."
-                ),
-            ),
-            OpenApiParameter(
-                "page_size",
-                OpenApiTypes.INT,
-                OpenApiParameter.QUERY,
-                required=False,
-                description="Page size for deliveries when pagination is enabled.",
-            ),
-        ],
         responses={
             200: PublicEditorPortfolioSerializer,
             404: DetailResponseSerializer,
@@ -1669,11 +1623,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         )
 
-        stats = deliveries.aggregate(
-            public_deliveries_count=Count("id"),
-            public_comments_count=Sum("public_comments_count"),
-        )
-        stats["public_comments_count"] = stats["public_comments_count"] or 0
+        stats = {
+            "public_deliveries_count": deliveries.count(),
+            "public_comments_count": OrderComment.objects.filter(
+                delivery__uploaded_by=editor,
+                delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                status=OrderComment.Status.APPROVED,
+                target_type=OrderComment.TargetType.DELIVERY,
+            ).count(),
+        }
 
         editor_data = {
             "id": editor.id,
@@ -1681,25 +1639,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             "first_name": editor.first_name,
             "last_name": editor.last_name,
         }
-
-        page = self.paginate_queryset(deliveries)
-        if page is not None:
-            deliveries_serializer = PublicOrderDeliverySerializer(
-                page,
-                many=True,
-                context={"request": request},
-            )
-
-            return Response(
-                {
-                    "editor": editor_data,
-                    "stats": stats,
-                    "deliveries": self.get_paginated_response(
-                        deliveries_serializer.data
-                    ).data,
-                },
-                status=status.HTTP_200_OK,
-            )
 
         deliveries_serializer = PublicOrderDeliverySerializer(
             deliveries,
@@ -1715,13 +1654,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
 
-
-
-
-    
-    
     @extend_schema(
         methods=["GET"],
         tags=["Order Comments"],
@@ -1923,15 +1856,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             if image_id:
                 comments = comments.filter(image_id=image_id)
 
-            delivery_id = request.query_params.get("delivery") or request.query_params.get(
-                "delivery_id"
-            )
+            delivery_id = request.query_params.get(
+                "delivery"
+            ) or request.query_params.get("delivery_id")
             if delivery_id:
                 comments = comments.filter(delivery_id=delivery_id)
 
-            revision_id = request.query_params.get("revision") or request.query_params.get(
-                "revision_id"
-            )
+            revision_id = request.query_params.get(
+                "revision"
+            ) or request.query_params.get("revision_id")
             if revision_id:
                 comments = comments.filter(revision_id=revision_id)
 
@@ -2097,7 +2030,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             ),
         ],
     )
-
     @action(
         detail=True,
         methods=["get", "post"],
