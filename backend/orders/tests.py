@@ -1398,3 +1398,152 @@ class PublicOrderDeliveryFilterAPITests(APITestCase):
         self.assertNotIn(self.delivery_two.id, returned_ids)
         self.assertNotIn(self.private_delivery.id, returned_ids)
         self.assertEqual(len(returned_ids), 1)
+
+
+class PublicOrderDeliveryCommentCountTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-count-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="public-count-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Public Comment Count Order",
+            description="Testing public comment counts",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "public-count-delivery.jpg",
+                b"public-count-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Delivery with public comments",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.other_public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "other-public-count-delivery.jpg",
+                b"other-public-count-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Another public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+    def _public_deliveries_url(self):
+        return reverse("orders-public-deliveries")
+
+    def _public_delivery_detail_url(self, delivery):
+        return reverse(
+            "orders-public-delivery-detail",
+            kwargs={"delivery_id": delivery.id},
+        )
+
+    def test_public_delivery_list_contains_public_comments_count(self):
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved public comment 1",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved public comment 2",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Active private comment",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        response = self.client.get(self._public_deliveries_url())
+
+        self.assertEqual(response.status_code, 200)
+
+        item = next(
+            item
+            for item in response.data
+            if item["id"] == self.public_delivery.id
+        )
+
+        self.assertEqual(item["public_comments_count"], 2)
+
+    def test_public_delivery_detail_contains_public_comments_count(self):
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved public comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Deleted comment",
+            status=OrderComment.Status.DELETED,
+        )
+
+        response = self.client.get(
+            self._public_delivery_detail_url(self.public_delivery)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["public_comments_count"], 1)
+
+    def test_public_comments_count_does_not_include_other_delivery_comments(self):
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Approved comment on main delivery",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.other_public_delivery,
+            text="Approved comment on other delivery",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        response = self.client.get(
+            self._public_delivery_detail_url(self.public_delivery)
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["public_comments_count"], 1)

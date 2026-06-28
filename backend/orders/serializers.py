@@ -114,6 +114,7 @@ class PublicOrderDeliverySerializer(serializers.ModelSerializer):
         source="uploaded_by.username",
         read_only=True,
     )
+    public_comments_count = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderDelivery
@@ -129,8 +130,17 @@ class PublicOrderDeliverySerializer(serializers.ModelSerializer):
             "publication_status",
             "publication_reviewed_at",
             "is_public",
+            "public_comments_count",
         )
         read_only_fields = fields
+
+    @extend_schema_field(serializers.IntegerField)
+    def get_public_comments_count(self, obj):
+        return obj.comments.filter(
+            status=OrderComment.Status.APPROVED,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=obj,
+        ).count()
 
 
 
