@@ -11,6 +11,7 @@ from django.utils import timezone
 from accounts.models import EditorProfile
 from orders.models import Order, OrderDelivery, OrderRating
 
+
 from rest_framework import status as drf_status
 from rest_framework.test import APITestCase
 
@@ -767,3 +768,215 @@ class OrderDeliveryPublicationAPITests(APITestCase):
             OrderDelivery.PublicationStatus.PRIVATE,
         )
         self.assertFalse(self.delivery.is_public)
+
+class OrderCommentPublicVisibilityTests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="comment-public-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="comment-public-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Comment Public Visibility Order",
+            description="Testing public comment visibility",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "public-delivery.jpg",
+                b"public-delivery-content",
+                content_type="image/jpeg",
+            ),
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "private-delivery.jpg",
+                b"private-delivery-content",
+                content_type="image/jpeg",
+            ),
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+    def _comments_url(self):
+        return reverse(
+            "orders-comments",
+            kwargs={"pk": self.order.pk},
+        )
+
+    def test_approved_comment_on_approved_delivery_is_publicly_visible(self):
+        comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Public approved delivery comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        self.assertTrue(comment.is_publicly_visible)
+
+    def test_approved_comment_on_private_delivery_is_not_publicly_visible(self):
+        comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.private_delivery,
+            text="Approved but private delivery comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        self.assertFalse(comment.is_publicly_visible)
+
+    def test_active_comment_on_approved_delivery_is_not_publicly_visible(self):
+        comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Active private comment",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        self.assertFalse(comment.is_publicly_visible)
+
+    def test_order_level_approved_comment_is_not_publicly_visible(self):
+        comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.ORDER,
+            text="Approved order-level comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        self.assertFalse(comment.is_publicly_visible)
+
+    def test_public_comment_filter_returns_only_publicly_visible_comments(self):
+        public_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Visible public comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        private_delivery_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.private_delivery,
+            text="Approved but delivery is private",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        active_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Delivery public but comment active",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.get(
+            self._comments_url(),
+            {"public": "true"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(public_comment.id, returned_ids)
+        self.assertNotIn(private_delivery_comment.id, returned_ids)
+        self.assertNotIn(active_comment.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+        returned_comment = response.data[0]
+        self.assertTrue(returned_comment["is_publicly_visible"])
+
+    def test_private_comment_filter_excludes_publicly_visible_comments(self):
+        public_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Visible public comment",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        private_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Private active comment",
+            status=OrderComment.Status.ACTIVE,
+        )
+
+        private_delivery_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.private_delivery,
+            text="Approved but delivery private",
+            status=OrderComment.Status.APPROVED,
+        )
+
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.get(
+            self._comments_url(),
+            {"public": "false"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertNotIn(public_comment.id, returned_ids)
+        self.assertIn(private_comment.id, returned_ids)
+        self.assertIn(private_delivery_comment.id, returned_ids)
+
+    def test_deleted_public_comment_is_not_returned_in_public_filter(self):
+        deleted_comment = OrderComment.objects.create(
+            order=self.order,
+            sender=self.client_user,
+            target_type=OrderComment.TargetType.DELIVERY,
+            delivery=self.public_delivery,
+            text="Deleted public comment",
+            status=OrderComment.Status.DELETED,
+        )
+
+        self.client.force_authenticate(self.client_user)
+
+        response = self.client.get(
+            self._comments_url(),
+            {"public": "true"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertNotIn(deleted_comment.id, returned_ids)
+        self.assertEqual(len(returned_ids), 0)

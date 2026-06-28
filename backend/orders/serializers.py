@@ -198,6 +198,7 @@ class OrderCommentSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     is_resolved = serializers.BooleanField(read_only=True)
+    is_publicly_visible = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = OrderComment
@@ -230,6 +231,7 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "annotation_label",
             "annotation_color",
             "annotation_data",
+            "is_publicly_visible",
         )
         read_only_fields = (
             "id",
@@ -246,6 +248,7 @@ class OrderCommentSerializer(serializers.ModelSerializer):
             "resolved_by",
             "resolved_by_username",
             "resolved_at",
+            "is_publicly_visible",
         )
 
     def validate(self, attrs):

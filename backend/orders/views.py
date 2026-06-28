@@ -425,9 +425,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
 
     def _is_publication_manager(self, user):
-        return (
-            getattr(user, "role", None) in {"admin", "supervisor"}
-            or getattr(user, "is_superuser", False)
+        return getattr(user, "role", None) in {"admin", "supervisor"} or getattr(
+            user, "is_superuser", False
         )
 
     def _get_order_delivery(self, order, delivery_id):
@@ -436,7 +435,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             id=delivery_id,
             order=order,
         )
-    
+
     @action(
         detail=True,
         methods=["post"],
@@ -487,7 +486,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if delivery.publication_status != OrderDelivery.PublicationStatus.REQUESTED:
             return Response(
-                {"detail": "Only requested deliveries can be approved for publication."},
+                {
+                    "detail": "Only requested deliveries can be approved for publication."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -522,7 +523,9 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         if delivery.publication_status != OrderDelivery.PublicationStatus.REQUESTED:
             return Response(
-                {"detail": "Only requested deliveries can be rejected for publication."},
+                {
+                    "detail": "Only requested deliveries can be rejected for publication."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1431,6 +1434,292 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        methods=["GET"],
+        tags=["Order Comments"],
+        summary="List order comments",
+        description=(
+            "Returns flat list of comments for an order. Supports filters for "
+            "resolved state, public visibility, annotation, target type and target object."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "resolved",
+                OpenApiTypes.BOOL,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "public",
+                OpenApiTypes.BOOL,
+                OpenApiParameter.QUERY,
+                required=False,
+                description=(
+                    "When true, returns only publicly visible comments. "
+                    "A public comment must be approved, attached to a delivery, "
+                    "and the delivery must be approved for publication. "
+                    "When false, excludes publicly visible comments."
+                ),
+            ),
+            OpenApiParameter(
+                "has_annotation",
+                OpenApiTypes.BOOL,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "annotation_type",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "target_type",
+                OpenApiTypes.STR,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "image",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "image_id",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "delivery",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "delivery_id",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "revision",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+            OpenApiParameter(
+                "revision_id",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+            ),
+        ],
+        responses={200: OrderCommentSerializer(many=True)},
+    )
+    @extend_schema(
+        methods=["POST"],
+        tags=["Order Comments"],
+        summary="Create order comment or reply",
+        description=(
+            "Creates a root comment or a reply. Replies inherit target fields "
+            "from their parent comment unless explicitly provided."
+        ),
+        request=CommentCreateRequestSerializer,
+        responses={
+            201: OrderCommentSerializer,
+            400: DetailResponseSerializer,
+        },
+        examples=[
+            OpenApiExample(
+                "Root order comment",
+                value={
+                    "target_type": "order",
+                    "text": "Please review this order.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Reply comment",
+                value={
+                    "parent": 7,
+                    "text": "This is a reply.",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Point annotation",
+                value={
+                    "target_type": "delivery",
+                    "delivery": 1,
+                    "text": "Reduce smoothing here.",
+                    "x": 42.5,
+                    "y": 58.3,
+                    "annotation_type": "point",
+                    "annotation_label": "Skin smoothing",
+                    "annotation_color": "#ff0000",
+                    "annotation_data": {"priority": "high"},
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="comments",
+    )
+    def comments(self, request, pk=None):
+        order = self.get_object()
+
+        if request.method == "GET":
+            comments = (
+                order.comments.select_related(
+                    "sender",
+                    "resolved_by",
+                    "parent",
+                    "parent__sender",
+                    "delivery",
+                )
+                .exclude(status=OrderComment.Status.DELETED)
+                .order_by("created_at")
+            )
+
+            public_param = request.query_params.get("public")
+            public_only = self._parse_bool_query_param(public_param)
+
+            if public_only is True:
+                comments = comments.filter(
+                    status=OrderComment.Status.APPROVED,
+                    target_type=OrderComment.TargetType.DELIVERY,
+                    delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                )
+
+            if public_only is False:
+                comments = comments.exclude(
+                    status=OrderComment.Status.APPROVED,
+                    target_type=OrderComment.TargetType.DELIVERY,
+                    delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                )
+
+            resolved_param = request.query_params.get("resolved")
+            resolved = self._parse_bool_query_param(resolved_param)
+
+            if resolved is True:
+                comments = comments.filter(resolved_at__isnull=False)
+
+            if resolved is False:
+                comments = comments.filter(resolved_at__isnull=True)
+
+            has_annotation_param = request.query_params.get("has_annotation")
+            has_annotation = self._parse_bool_query_param(has_annotation_param)
+
+            if has_annotation is True:
+                comments = comments.exclude(annotation_type="none")
+
+            if has_annotation is False:
+                comments = comments.filter(annotation_type="none")
+
+            annotation_type = request.query_params.get("annotation_type")
+            if annotation_type:
+                comments = comments.filter(annotation_type=annotation_type)
+
+            target_type = request.query_params.get("target_type")
+            if target_type:
+                comments = comments.filter(target_type=target_type)
+
+            image_id = request.query_params.get("image") or request.query_params.get(
+                "image_id"
+            )
+            if image_id:
+                comments = comments.filter(image_id=image_id)
+
+            delivery_id = request.query_params.get("delivery") or request.query_params.get(
+                "delivery_id"
+            )
+            if delivery_id:
+                comments = comments.filter(delivery_id=delivery_id)
+
+            revision_id = request.query_params.get("revision") or request.query_params.get(
+                "revision_id"
+            )
+            if revision_id:
+                comments = comments.filter(revision_id=revision_id)
+
+            serializer = OrderCommentSerializer(
+                comments,
+                many=True,
+                context={"request": request},
+            )
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        data = request.data.copy()
+        parent_id = data.get("parent")
+
+        if parent_id:
+            try:
+                parent_comment = order.comments.get(id=parent_id)
+            except OrderComment.DoesNotExist:
+                return Response(
+                    {"parent": "Parent comment not found for this order."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if parent_comment.status == OrderComment.Status.DELETED:
+                return Response(
+                    {"parent": "Cannot reply to a deleted comment."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            data["target_type"] = parent_comment.target_type
+            data["image"] = parent_comment.image_id
+            data["delivery"] = parent_comment.delivery_id
+            data["revision"] = parent_comment.revision_id
+
+        serializer = OrderCommentSerializer(
+            data=data,
+            context={
+                "request": request,
+                "order": order,
+            },
+        )
+
+        if serializer.is_valid():
+            comment = serializer.save(
+                order=order,
+                sender=request.user,
+            )
+
+            self._log_activity(
+                order=order,
+                actor=request.user,
+                activity_type=OrderActivityLog.ActivityType.COMMENT_CREATED,
+                message=(
+                    "Comment reply created."
+                    if comment.parent_id
+                    else "Comment created."
+                ),
+                metadata={
+                    "comment_id": comment.id,
+                    "parent_id": comment.parent_id,
+                    "is_reply": comment.parent_id is not None,
+                    "target_type": comment.target_type,
+                    "status": comment.status,
+                    "annotation_type": comment.annotation_type,
+                    "has_annotation": comment.annotation_type != "none",
+                    "annotation_label": comment.annotation_label,
+                },
+            )
+
+            output_serializer = OrderCommentSerializer(
+                comment,
+                context={"request": request},
+            )
+            return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @extend_schema(
         methods=["GET"],
@@ -1521,6 +1810,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             ),
         ],
     )
+
     @action(
         detail=True,
         methods=["get", "post"],
@@ -1536,10 +1826,27 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "resolved_by",
                     "parent",
                     "parent__sender",
+                    "delivery",
                 )
                 .exclude(status=OrderComment.Status.DELETED)
                 .order_by("created_at")
             )
+            public_param = request.query_params.get("public")
+            public_only = self._parse_bool_query_param(public_param)
+
+            if public_only is True:
+                comments = comments.filter(
+                    status=OrderComment.Status.APPROVED,
+                    target_type=OrderComment.TargetType.DELIVERY,
+                    delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                )
+
+            if public_only is False:
+                comments = comments.exclude(
+                    status=OrderComment.Status.APPROVED,
+                    target_type=OrderComment.TargetType.DELIVERY,
+                    delivery__publication_status=OrderDelivery.PublicationStatus.APPROVED,
+                )
 
             resolved_param = request.query_params.get("resolved")
             resolved = self._parse_bool_query_param(resolved_param)

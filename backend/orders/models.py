@@ -349,6 +349,15 @@ class OrderComment(models.Model):
     def is_resolved(self):
         return self.resolved_at is not None
     
+    @property
+    def is_publicly_visible(self):
+        return (
+            self.status == self.Status.APPROVED
+            and self.target_type == self.TargetType.DELIVERY
+            and self.delivery_id is not None
+            and self.delivery.publication_status == OrderDelivery.PublicationStatus.APPROVED
+        )
+    
     class TargetType(models.TextChoices):
         ORDER = "order", "Order"
         IMAGE = "image", "Image"
