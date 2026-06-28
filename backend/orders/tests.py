@@ -980,3 +980,114 @@ class OrderCommentPublicVisibilityTests(APITestCase):
 
         self.assertNotIn(deleted_comment.id, returned_ids)
         self.assertEqual(len(returned_ids), 0)
+
+class PublicOrderDeliveryAPITests(APITestCase):
+    def setUp(self):
+        User = get_user_model()
+
+        self.client_user = User.objects.create_user(
+            username="public-delivery-client",
+            password="pass12345",
+            role="client",
+        )
+        self.editor_user = User.objects.create_user(
+            username="public-delivery-editor",
+            password="pass12345",
+            role="editor",
+        )
+
+        self.order = Order.objects.create(
+            client=self.client_user,
+            editor=self.editor_user,
+            title="Public Delivery Order",
+            description="Testing public delivery endpoint",
+            status=Order.Status.DELIVERED,
+        )
+
+        self.public_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "approved-public-delivery.jpg",
+                b"approved-public-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Approved public delivery",
+            publication_status=OrderDelivery.PublicationStatus.APPROVED,
+        )
+
+        self.private_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "private-delivery.jpg",
+                b"private-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Private delivery",
+            publication_status=OrderDelivery.PublicationStatus.PRIVATE,
+        )
+
+        self.requested_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "requested-delivery.jpg",
+                b"requested-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Requested delivery",
+            publication_status=OrderDelivery.PublicationStatus.REQUESTED,
+        )
+
+        self.rejected_delivery = OrderDelivery.objects.create(
+            order=self.order,
+            uploaded_by=self.editor_user,
+            file=SimpleUploadedFile(
+                "rejected-delivery.jpg",
+                b"rejected-delivery-content",
+                content_type="image/jpeg",
+            ),
+            note="Rejected delivery",
+            publication_status=OrderDelivery.PublicationStatus.REJECTED,
+        )
+
+    def _public_deliveries_url(self):
+        return reverse("orders-public-deliveries")
+
+    def test_anonymous_user_can_list_public_deliveries(self):
+        response = self.client.get(self._public_deliveries_url())
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_public_deliveries_endpoint_returns_only_approved_deliveries(self):
+        response = self.client.get(self._public_deliveries_url())
+
+        self.assertEqual(response.status_code, 200)
+
+        returned_ids = {item["id"] for item in response.data}
+
+        self.assertIn(self.public_delivery.id, returned_ids)
+        self.assertNotIn(self.private_delivery.id, returned_ids)
+        self.assertNotIn(self.requested_delivery.id, returned_ids)
+        self.assertNotIn(self.rejected_delivery.id, returned_ids)
+        self.assertEqual(len(returned_ids), 1)
+
+    def test_public_delivery_response_contains_public_fields(self):
+        response = self.client.get(self._public_deliveries_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+
+        item = response.data[0]
+
+        self.assertEqual(item["id"], self.public_delivery.id)
+        self.assertEqual(item["order"], self.order.id)
+        self.assertEqual(item["order_title"], self.order.title)
+        self.assertEqual(item["uploaded_by"], self.editor_user.id)
+        self.assertEqual(item["uploaded_by_username"], self.editor_user.username)
+        self.assertEqual(
+            item["publication_status"],
+            OrderDelivery.PublicationStatus.APPROVED,
+        )
+        self.assertTrue(item["is_public"])

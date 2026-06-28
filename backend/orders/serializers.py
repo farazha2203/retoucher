@@ -105,6 +105,33 @@ class OrderDeliverySerializer(serializers.ModelSerializer):
             "is_public",
         )
 
+class PublicOrderDeliverySerializer(serializers.ModelSerializer):
+    order_title = serializers.CharField(
+        source="order.title",
+        read_only=True,
+    )
+    uploaded_by_username = serializers.CharField(
+        source="uploaded_by.username",
+        read_only=True,
+    )
+
+    class Meta:
+        model = OrderDelivery
+        fields = (
+            "id",
+            "order",
+            "order_title",
+            "file",
+            "note",
+            "uploaded_by",
+            "uploaded_by_username",
+            "uploaded_at",
+            "publication_status",
+            "publication_reviewed_at",
+            "is_public",
+        )
+        read_only_fields = fields
+
 
 class OrderRevisionSerializer(serializers.ModelSerializer):
     requested_by_username = serializers.CharField(

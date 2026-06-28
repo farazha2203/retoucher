@@ -37,6 +37,7 @@ from .api_docs import (
     RatingRequestSerializer,
     SettlementSummarySerializer,
     StatusSummaryItemSerializer,
+    
 )
 
 
@@ -64,6 +65,7 @@ from .serializers import (
     OrderSerializer,
     OrderStatusHistorySerializer,
     OrderNotificationSerializer,
+    PublicOrderDeliverySerializer,
 )
 
 User = get_user_model()
@@ -1434,6 +1436,43 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response(order_serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @extend_schema(
+        tags=["Public Deliveries"],
+        summary="List public order deliveries",
+        description=(
+            "Returns deliveries that have been approved for publication. "
+            "This endpoint can be used for public gallery or portfolio pages."
+        ),
+        responses={200: PublicOrderDeliverySerializer(many=True)},
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="public-deliveries",
+        permission_classes=[permissions.AllowAny],
+    )
+    def public_deliveries(self, request):
+        deliveries = (
+            OrderDelivery.objects.select_related(
+                "order",
+                "uploaded_by",
+            )
+            .filter(
+                publication_status=OrderDelivery.PublicationStatus.APPROVED,
+            )
+            .order_by(
+                "-publication_reviewed_at",
+                "-uploaded_at",
+            )
+        )
+
+        serializer = PublicOrderDeliverySerializer(
+            deliveries,
+            many=True,
+            context={"request": request},
+        )
+        return Response(serializer.data, status=status.HTTP_200_OK)
     
     @extend_schema(
         methods=["GET"],
