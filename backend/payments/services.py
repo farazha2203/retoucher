@@ -173,6 +173,13 @@ def settle_order(order, admin_user) -> dict:
     Returns: {commission, editor_earning, client_tx, commission_tx, editor_tx}
     """
     amount = get_order_amount(order)
+    
+    if getattr(order, "payment_settled", False):
+        raise ValidationError("این سفارش قبلاً تسویه شده است.")
+
+    if order.editor_id is None:
+        raise ValidationError("برای تسویه، سفارش باید ادیتور داشته باشد.")
+    
     commission_setting = SiteCommissionSetting.get_active()
     if not commission_setting:
         raise ValidationError("تنظیمات کمیسیون فعالی وجود ندارد.")
@@ -221,6 +228,27 @@ def settle_order(order, admin_user) -> dict:
         description=f"درآمد سفارش #{order.id} (پس از {commission_setting.commission_percent}٪ کمیسیون)",
         created_by=admin_user,
         meta={"original_amount": str(amount), "commission": str(commission_amount)},
+    )
+
+    order.commission_amount = commission_amount
+    order.editor_earning = editor_earning
+    order.escrow_held = False
+    order.payment_settled = True
+    order.paid_at = timezone.now()
+
+    if getattr(order, "status", None) == order.Status.SETTLEMENT_PENDING:
+        order.status = order.Status.PAID
+
+    order.save(
+        update_fields=[
+            "commission_amount",
+            "editor_earning",
+            "escrow_held",
+            "payment_settled",
+            "paid_at",
+            "status",
+            "updated_at",
+        ]
     )
 
     return {

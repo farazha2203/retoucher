@@ -435,3 +435,19 @@ POST /api/payments/wallet/admin/commission/
 - ✅ authority زرین‌پال در endpoint عمومی مخفی است
 - ✅ Rate limit: ۱۰ درخواست/دقیقه برای پرداخت
 - ✅ Double-verification: تأیید مجدد پرداخت‌های قبلاً موفق ممکن نیست
+
+
+مسیرهای settlement فعال:
+
+```text
+/api/payments/settlement/summary/
+/api/payments/settlement/pending/
+/api/payments/settlement/all/
+/api/payments/settlement/{order_id}/detail/
+/api/payments/settlement/{order_id}/set-price/
+/api/payments/settlement/{order_id}/settle/
+
+
+- settlement فعال است و فقط برای admin/support/is_staff مجاز است.
+- settlement دوباره روی سفارش settled شده مجاز نیست.
+- settlement بدون editor یا agreed_price معتبر مجاز نیست.
