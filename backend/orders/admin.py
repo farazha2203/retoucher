@@ -45,6 +45,7 @@ class OrderAdmin(admin.ModelAdmin):
         "editor__email",
     )
     ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     inlines = (OrderImageInline,)
     list_select_related = (
         "client",
@@ -60,6 +61,34 @@ class OrderAdmin(admin.ModelAdmin):
         "revision_count",
     )
 
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "title",
+                "description",
+                "status",
+            )
+        }),
+        ("People", {
+            "fields": (
+                "client",
+                "editor",
+            )
+        }),
+        ("Timing", {
+            "fields": (
+                "deadline",
+                "created_at",
+                "updated_at",
+            )
+        }),
+        ("Counters", {
+            "fields": (
+                "revision_count",
+            )
+        }),
+    )
+
 
 @admin.register(OrderDelivery)
 class OrderDeliveryAdmin(admin.ModelAdmin):
@@ -67,14 +96,21 @@ class OrderDeliveryAdmin(admin.ModelAdmin):
         "id",
         "order",
         "uploaded_by",
+        "publication_status",
         "uploaded_at",
     )
     search_fields = (
         "order__title",
         "uploaded_by__username",
         "uploaded_by__email",
+        "note",
     )
-    list_filter = ("uploaded_at",)
+    list_filter = (
+        "publication_status",
+        "uploaded_at",
+    )
+    ordering = ("-uploaded_at",)
+    date_hierarchy = "uploaded_at"
     list_select_related = (
         "order",
         "uploaded_by",
@@ -84,6 +120,27 @@ class OrderDeliveryAdmin(admin.ModelAdmin):
         "uploaded_by",
     )
     readonly_fields = ("uploaded_at",)
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "uploaded_by",
+                "file",
+                "note",
+            )
+        }),
+        ("Publication", {
+            "fields": (
+                "publication_status",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "uploaded_at",
+            )
+        }),
+    )
 
 
 @admin.register(OrderRevision)
@@ -105,6 +162,8 @@ class OrderRevisionAdmin(admin.ModelAdmin):
         "source",
         "created_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "requested_by",
@@ -115,6 +174,22 @@ class OrderRevisionAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         "created_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "source",
+                "requested_by",
+                "note",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+            )
+        }),
     )
 
 
@@ -141,6 +216,8 @@ class OrderRatingAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "rated_by",
@@ -152,6 +229,24 @@ class OrderRatingAdmin(admin.ModelAdmin):
     readonly_fields = (
         "created_at",
         "updated_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "source",
+                "rated_by",
+                "score",
+                "comment",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+                "updated_at",
+            )
+        }),
     )
 
 
@@ -167,6 +262,8 @@ class OrderImageAdmin(admin.ModelAdmin):
         "order__title",
         "order__client__username",
     )
+    ordering = ("-uploaded_at",)
+    date_hierarchy = "uploaded_at"
     list_select_related = ("order",)
     raw_id_fields = ("order",)
     readonly_fields = ("uploaded_at",)
@@ -196,9 +293,12 @@ class OrderCommentAdmin(admin.ModelAdmin):
         "is_edited",
         "created_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "sender",
+        "resolved_by",
     )
     raw_id_fields = (
         "order",
@@ -216,6 +316,45 @@ class OrderCommentAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "resolved_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "sender",
+                "text",
+                "target_type",
+                "status",
+            )
+        }),
+        ("Relations", {
+            "fields": (
+                "parent",
+                "image",
+                "delivery",
+                "revision",
+            )
+        }),
+        ("Moderation", {
+            "fields": (
+                "resolved_by",
+                "resolved_at",
+                "deleted_at",
+            )
+        }),
+        ("Edit State", {
+            "fields": (
+                "is_edited",
+                "edited_at",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+                "updated_at",
+            )
+        }),
     )
 
 
@@ -240,6 +379,8 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
         "to_status",
         "created_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "changed_by",
@@ -250,6 +391,23 @@ class OrderStatusHistoryAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         "created_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "from_status",
+                "to_status",
+                "changed_by",
+                "note",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+            )
+        }),
     )
 
 
@@ -272,6 +430,8 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
         "activity_type",
         "created_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "actor",
@@ -282,6 +442,22 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         "created_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "activity_type",
+                "actor",
+                "message",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+            )
+        }),
     )
 
 
@@ -311,6 +487,8 @@ class OrderNotificationAdmin(admin.ModelAdmin):
         "created_at",
         "read_at",
     )
+    ordering = ("-created_at",)
+    date_hierarchy = "created_at"
     list_select_related = (
         "order",
         "recipient",
@@ -325,4 +503,33 @@ class OrderNotificationAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         "created_at",
+    )
+
+    fieldsets = (
+        ("Main", {
+            "fields": (
+                "order",
+                "recipient",
+                "actor",
+                "notification_type",
+                "title",
+                "message",
+            )
+        }),
+        ("State", {
+            "fields": (
+                "is_read",
+                "read_at",
+            )
+        }),
+        ("Relations", {
+            "fields": (
+                "activity_log",
+            )
+        }),
+        ("Metadata", {
+            "fields": (
+                "created_at",
+            )
+        }),
     )

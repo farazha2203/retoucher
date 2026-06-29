@@ -533,6 +533,8 @@ class PublicEditorPortfolioUserSerializer(serializers.Serializer):
     username = serializers.CharField()
     first_name = serializers.CharField(allow_blank=True)
     last_name = serializers.CharField(allow_blank=True)
+    full_name = serializers.CharField(allow_blank=True)
+    display_name = serializers.CharField()
 
 
 class PublicEditorPortfolioStatsSerializer(serializers.Serializer):
@@ -554,7 +556,23 @@ class PublicEditorListItemSerializer(serializers.Serializer):
     stats = PublicEditorPortfolioStatsSerializer()
     rating = PublicEditorPortfolioRatingSerializer()
 
+class PublicEditorListMetaSerializer(serializers.Serializer):
+    ordering = serializers.CharField()
+    available_orderings = serializers.ListField(
+        child=serializers.CharField()
+    )
+    search = serializers.CharField(allow_blank=True)
+
+
+class PublicEditorListResponseSerializer(serializers.Serializer):
+    count = serializers.IntegerField()
+    next = serializers.CharField(allow_null=True)
+    previous = serializers.CharField(allow_null=True)
+    results = PublicEditorListItemSerializer(many=True)
+    meta = PublicEditorListMetaSerializer()
+
 class PublicEditorPortfolioMetaSerializer(serializers.Serializer):
+    editor_id = serializers.IntegerField()
     ordering = serializers.CharField()
     available_orderings = serializers.ListField(
         child=serializers.CharField()

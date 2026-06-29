@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from datetime import timedelta
+from urllib import response
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -2034,7 +2035,14 @@ class PublicEditorPortfolioPolishTests(APITestCase):
 
         self.assertEqual(
             set(response.data["editor"].keys()),
-            {"id", "username", "first_name", "last_name"},
+            {
+                "id",
+                "username",
+                "first_name",
+                "last_name",
+                "full_name",
+                "display_name",
+            },
         )
 
     def test_public_editor_portfolio_supports_most_commented_ordering(self):
@@ -2265,6 +2273,7 @@ class PublicEditorPortfolioRatingSummaryTests(APITestCase):
         self.assertEqual(response.data["rating"]["average"], 0)
         self.assertEqual(response.data["rating"]["count"], 0)
 
+
 class PublicEditorPortfolioResponsePolishTests(APITestCase):
     def setUp(self):
         User = get_user_model()
@@ -2320,10 +2329,10 @@ class PublicEditorPortfolioResponsePolishTests(APITestCase):
             publication_status=OrderDelivery.PublicationStatus.APPROVED,
         )
 
-    def _portfolio_url(self):
+    def _portfolio_url(self, editor_id=None):
         return reverse(
             "orders-public-editor-portfolio",
-            kwargs={"editor_id": self.editor_user.id},
+            kwargs={"editor_id": editor_id or self.editor_user.id},
         )
 
     def test_public_editor_portfolio_contains_public_orders_count(self):
@@ -2361,6 +2370,21 @@ class PublicEditorPortfolioResponsePolishTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["meta"]["ordering"], "newest")
+
+    def test_public_editor_portfolio_includes_enriched_editor_identity(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["editor"]["id"], self.editor_user.id)
+        self.assertIn("full_name", response.data["editor"])
+        self.assertIn("display_name", response.data["editor"])
+
+    def test_public_editor_portfolio_meta_includes_editor_id(self):
+        response = self.client.get(self._portfolio_url(self.editor_user.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["meta"]["editor_id"], self.editor_user.id)
+
 
 class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
     def setUp(self):
@@ -2459,7 +2483,14 @@ class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             set(response.data["editor"].keys()),
-            {"id", "username", "first_name", "last_name"},
+            {
+                "id",
+                "username",
+                "first_name",
+                "last_name",
+                "full_name",
+                "display_name",
+            },
         )
 
     def test_public_editor_portfolio_response_contract_stats_keys(self):
@@ -2490,7 +2521,11 @@ class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             set(response.data["meta"].keys()),
-            {"ordering", "available_orderings"},
+            {
+                "editor_id",
+                "ordering",
+                "available_orderings",
+            },
         )
 
     def test_public_editor_portfolio_empty_editor_contract(self):
@@ -2516,12 +2551,9 @@ class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
         self.assertEqual(
             response.data["meta"],
             {
+                "editor_id": self.empty_editor.id,
                 "ordering": "newest",
-                "available_orderings": [
-                    "newest",
-                    "oldest",
-                    "most_commented",
-                ],
+                "available_orderings": ["newest", "oldest", "most_commented"],
             },
         )
         self.assertEqual(response.data["deliveries"], [])
@@ -2560,6 +2592,7 @@ class PublicEditorPortfolioContractAndEdgeCaseTests(APITestCase):
 
         self.assertIn(self.public_delivery.id, delivery_ids)
         self.assertNotIn(self.private_delivery.id, delivery_ids)
+
 
 class PublicEditorListEndpointTests(APITestCase):
     def setUp(self):
@@ -2758,7 +2791,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        ids = {item["id"] for item in response.data}
+        ids = {item["id"] for item in response.data["results"]}
 
         self.assertIn(self.editor_low.id, ids)
         self.assertIn(self.editor_high.id, ids)
@@ -2771,7 +2804,7 @@ class PublicEditorListEndpointTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.data), 1)
 
-        item = response.data[0]
+        item = response.data["results"][0]
 
         self.assertEqual(
             set(item.keys()),
@@ -2795,7 +2828,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        items_by_id = {item["id"]: item for item in response.data}
+        items_by_id = {item["id"]: item for item in response.data["results"]}
         high_item = items_by_id[self.editor_high.id]
 
         self.assertEqual(high_item["stats"]["public_deliveries_count"], 2)
@@ -2812,7 +2845,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        ids = {item["id"] for item in response.data}
+        ids = {item["id"] for item in response.data["results"]}
 
         self.assertIn(self.editor_low.id, ids)
         self.assertNotIn(self.editor_high.id, ids)
@@ -2825,7 +2858,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        ids = {item["id"] for item in response.data}
+        ids = {item["id"] for item in response.data["results"]}
 
         self.assertIn(self.editor_high.id, ids)
         self.assertNotIn(self.editor_low.id, ids)
@@ -2838,7 +2871,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+        self.assertEqual(response.data["results"][0]["id"], self.editor_high.id)
 
     def test_public_editors_list_ordering_most_deliveries(self):
         response = self.client.get(
@@ -2848,7 +2881,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+        self.assertEqual(response.data["results"][0]["id"], self.editor_high.id)
 
     def test_public_editors_list_ordering_most_commented(self):
         response = self.client.get(
@@ -2858,7 +2891,7 @@ class PublicEditorListEndpointTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.data), 2)
-        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+        self.assertEqual(response.data["results"][0]["id"], self.editor_high.id)
 
     def test_public_editors_list_invalid_ordering_falls_back_to_newest(self):
         response = self.client.get(
@@ -2870,7 +2903,7 @@ class PublicEditorListEndpointTests(APITestCase):
         self.assertGreaterEqual(len(response.data), 2)
 
         # newest fallback sorts by id descending
-        self.assertEqual(response.data[0]["id"], self.editor_high.id)
+        self.assertEqual(response.data["results"][0]["id"], self.editor_high.id)
 
     def test_public_editors_list_empty_search_returns_empty_list(self):
         response = self.client.get(
@@ -2879,4 +2912,43 @@ class PublicEditorListEndpointTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, [])
+        self.assertEqual(response.data["results"], [])
+        self.assertEqual(response.data["count"], 0)
+
+    def test_public_editors_list_returns_paginated_shape(self):
+        response = self.client.get(self._url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data.keys()),
+            {"count", "next", "previous", "results", "meta"},
+        )
+        self.assertIsInstance(response.data["results"], list)
+        self.assertEqual(
+            set(response.data["meta"].keys()),
+            {"ordering", "available_orderings", "search"},
+        )
+
+    def test_public_editors_list_meta_reflects_filters(self):
+        response = self.client.get(
+            self._url(),
+            {"ordering": "top_rated", "search": "beta"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["meta"]["ordering"], "top_rated")
+        self.assertEqual(response.data["meta"]["search"], "beta")
+        self.assertEqual(
+            response.data["meta"]["available_orderings"],
+            ["newest", "top_rated", "most_deliveries", "most_commented"],
+        )
+
+    def test_public_editors_list_page_size_query_param(self):
+        response = self.client.get(
+            self._url(),
+            {"page_size": 1},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["count"], 2)

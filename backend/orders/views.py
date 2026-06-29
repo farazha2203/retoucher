@@ -13,6 +13,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.db.models import Avg, Count, Q
+from rest_framework.pagination import PageNumberPagination
 
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -70,6 +71,7 @@ from .serializers import (
     PublicOrderDeliveryDetailSerializer,
     PublicEditorPortfolioSerializer,
     PublicEditorListItemSerializer,
+    PublicEditorListResponseSerializer,
 )
 
 User = get_user_model()
@@ -79,6 +81,12 @@ class OrderPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+class PublicEditorListPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 50
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -1695,6 +1703,8 @@ class OrderViewSet(viewsets.ModelViewSet):
                         "username": "retouch_editor",
                         "first_name": "Ali",
                         "last_name": "Ahmadi",
+                        "full_name": "Ali Ahmadi",
+                        "display_name": "Ali Ahmadi",
                     },
                     "stats": {
                         "public_deliveries_count": 2,
@@ -1706,6 +1716,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                         "count": 2,
                     },
                     "meta": {
+                        "editor_id": 12,
                         "ordering": "newest",
                         "available_orderings": [
                             "newest",
@@ -1719,24 +1730,27 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status_codes=["200"],
             ),
             OpenApiExample(
-                "Empty public portfolio response",
+                "Public editor portfolio response",
                 value={
                     "editor": {
-                        "id": 13,
-                        "username": "new_editor",
-                        "first_name": "",
-                        "last_name": "",
+                        "id": 7,
+                        "username": "editor_ali",
+                        "first_name": "Ali",
+                        "last_name": "Ahmadi",
+                        "full_name": "Ali Ahmadi",
+                        "display_name": "Ali Ahmadi",
                     },
                     "stats": {
-                        "public_deliveries_count": 0,
-                        "public_comments_count": 0,
-                        "public_orders_count": 0,
+                        "public_deliveries_count": 3,
+                        "public_comments_count": 5,
+                        "public_orders_count": 2,
                     },
                     "rating": {
-                        "average": 0,
-                        "count": 0,
+                        "average": 4.5,
+                        "count": 2,
                     },
                     "meta": {
+                        "editor_id": 7,
                         "ordering": "newest",
                         "available_orderings": [
                             "newest",
@@ -1744,18 +1758,21 @@ class OrderViewSet(viewsets.ModelViewSet):
                             "most_commented",
                         ],
                     },
-                    "deliveries": [],
+                    "deliveries": [
+                        {
+                            "id": 101,
+                            "order": 55,
+                            "uploaded_by": 7,
+                            "file": "https://example.com/media/orders/deliveries/sample.jpg",
+                            "note": "Final retouched delivery",
+                            "publication_status": "approved",
+                            "uploaded_at": "2026-06-28T12:00:00Z",
+                            "public_comments_count": 2,
+                        }
+                    ],
                 },
                 response_only=True,
                 status_codes=["200"],
-            ),
-            OpenApiExample(
-                "Editor not found",
-                value={
-                    "detail": "Editor not found.",
-                },
-                response_only=True,
-                status_codes=["404"],
             ),
         ],
     )
@@ -1826,15 +1843,23 @@ class OrderViewSet(viewsets.ModelViewSet):
         rating = self._get_public_editor_rating_summary(public_order_ids)
 
         meta = {
+            "editor_id": editor.id,
             "ordering": ordering,
             "available_orderings": available_orderings,
         }
 
+        first_name = editor.first_name or ""
+        last_name = editor.last_name or ""
+        full_name = f"{first_name} {last_name}".strip()
+        display_name = full_name or editor.username
+
         editor_data = {
             "id": editor.id,
             "username": editor.username,
-            "first_name": editor.first_name,
-            "last_name": editor.last_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "full_name": full_name,
+            "display_name": display_name,
         }
 
         deliveries_serializer = PublicOrderDeliverySerializer(
@@ -1853,15 +1878,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
-    
+
     @extend_schema(
         tags=["Public Portfolio"],
         summary="List public editors",
         description=(
-            "Returns editors who have at least one approved public delivery. "
-            "Each item includes safe public identity fields, public portfolio stats, "
-            "and public rating summary. Private deliveries and ratings from orders "
-            "without public deliveries are excluded."
+            "Returns a paginated list of editors who have at least one approved public delivery. "
+            "Each item includes safe public identity fields, public portfolio stats, and public "
+            "rating summary. Supports search and ordering. Private deliveries and ratings from "
+            "orders without approved public deliveries are excluded."
         ),
         parameters=[
             OpenApiParameter(
@@ -1869,9 +1894,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 OpenApiTypes.STR,
                 OpenApiParameter.QUERY,
                 required=False,
-                description=(
-                    "Search editors by username, first name, or last name."
-                ),
+                description="Search editors by username, first name, or last name.",
             ),
             OpenApiParameter(
                 "ordering",
@@ -1883,52 +1906,86 @@ class OrderViewSet(viewsets.ModelViewSet):
                     "most_deliveries, most_commented. Invalid values fall back to newest."
                 ),
                 examples=[
-                    OpenApiExample(
-                        "Newest",
-                        value="newest",
-                        description="Sort editors by newest user id first.",
-                    ),
-                    OpenApiExample(
-                        "Top rated",
-                        value="top_rated",
-                        description="Sort editors by public rating average.",
-                    ),
-                    OpenApiExample(
-                        "Most deliveries",
-                        value="most_deliveries",
-                        description="Sort editors by public delivery count.",
-                    ),
-                    OpenApiExample(
-                        "Most commented",
-                        value="most_commented",
-                        description="Sort editors by approved public comments count.",
-                    ),
+                    OpenApiExample("Newest", value="newest"),
+                    OpenApiExample("Top rated", value="top_rated"),
+                    OpenApiExample("Most deliveries", value="most_deliveries"),
+                    OpenApiExample("Most commented", value="most_commented"),
                 ],
+            ),
+            OpenApiParameter(
+                "page",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Page number.",
+            ),
+            OpenApiParameter(
+                "page_size",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                required=False,
+                description="Items per page. Defaults to 10, max 50.",
             ),
         ],
         responses={
-            200: PublicEditorListItemSerializer(many=True),
+            200: PublicEditorListResponseSerializer,
         },
         examples=[
             OpenApiExample(
-                "Public editors list",
-                value=[
-                    {
-                        "id": 12,
-                        "username": "retouch_editor",
-                        "first_name": "Ali",
-                        "last_name": "Ahmadi",
-                        "stats": {
-                            "public_deliveries_count": 3,
-                            "public_comments_count": 5,
-                            "public_orders_count": 2,
-                        },
-                        "rating": {
-                            "average": 4.5,
-                            "count": 2,
-                        },
-                    }
-                ],
+                "Paginated public editors response",
+                value={
+                    "count": 2,
+                    "next": None,
+                    "previous": None,
+                    "results": [
+                        {
+                            "id": 12,
+                            "username": "retouch_editor",
+                            "first_name": "Ali",
+                            "last_name": "Ahmadi",
+                            "stats": {
+                                "public_deliveries_count": 3,
+                                "public_comments_count": 5,
+                                "public_orders_count": 2,
+                            },
+                            "rating": {
+                                "average": 4.5,
+                                "count": 2,
+                            },
+                        }
+                    ],
+                    "meta": {
+                        "ordering": "newest",
+                        "available_orderings": [
+                            "newest",
+                            "top_rated",
+                            "most_deliveries",
+                            "most_commented",
+                        ],
+                        "search": "",
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Empty paginated public editors response",
+                value={
+                    "count": 0,
+                    "next": None,
+                    "previous": None,
+                    "results": [],
+                    "meta": {
+                        "ordering": "newest",
+                        "available_orderings": [
+                            "newest",
+                            "top_rated",
+                            "most_deliveries",
+                            "most_commented",
+                        ],
+                        "search": "missing",
+                    },
+                },
                 response_only=True,
                 status_codes=["200"],
             ),
@@ -1953,16 +2010,21 @@ class OrderViewSet(viewsets.ModelViewSet):
         if ordering not in available_orderings:
             ordering = "newest"
 
-        public_editor_ids = OrderDelivery.objects.filter(
-            publication_status=OrderDelivery.PublicationStatus.APPROVED,
-        ).values_list("uploaded_by_id", flat=True).distinct()
+        search = (request.query_params.get("search") or "").strip()
+
+        public_editor_ids = (
+            OrderDelivery.objects.filter(
+                publication_status=OrderDelivery.PublicationStatus.APPROVED,
+            )
+            .values_list("uploaded_by_id", flat=True)
+            .distinct()
+        )
 
         editors = User.objects.filter(
             id__in=public_editor_ids,
             role="editor",
         )
 
-        search = request.query_params.get("search")
         if search:
             editors = editors.filter(
                 Q(username__icontains=search)
@@ -1970,10 +2032,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                 | Q(last_name__icontains=search)
             )
 
-        items = [
-            self._get_public_editor_list_item(editor)
-            for editor in editors
-        ]
+        items = [self._get_public_editor_list_item(editor) for editor in editors]
 
         if ordering == "top_rated":
             items.sort(
@@ -2004,17 +2063,26 @@ class OrderViewSet(viewsets.ModelViewSet):
                 reverse=True,
             )
         else:
-            items.sort(
-                key=lambda item: item["id"],
-                reverse=True,
-            )
+            items.sort(key=lambda item: item["id"], reverse=True)
+
+        paginator = PublicEditorListPagination()
+        page = paginator.paginate_queryset(items, request, view=self)
 
         serializer = PublicEditorListItemSerializer(
-            items,
+            page,
             many=True,
             context={"request": request},
         )
-        return Response(serializer.data, status=status.HTTP_200_OK)
+
+        paginated_response = paginator.get_paginated_response(serializer.data)
+
+        paginated_response.data["meta"] = {
+            "ordering": ordering,
+            "available_orderings": available_orderings,
+            "search": search,
+        }
+
+        return paginated_response
 
     @extend_schema(
         methods=["GET"],

@@ -1,0 +1,112 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div class="rt-dashboard">
+
+  <div class="rt-dashboard-hero">
+    <div>
+      <p class="rt-eyebrow">Retoucher Platform</p>
+      <h1>Control Panel</h1>
+      <p>
+        Manage orders, editors, public portfolio, payments and platform activity from one powerful dashboard.
+      </p>
+    </div>
+
+    <div class="rt-hero-actions">
+      <a class="rt-primary-action" href="{% url 'admin:orders_order_changelist' %}">
+        Manage Orders
+      </a>
+      <a class="rt-secondary-action" href="{% url 'admin:payments_paymentrequest_changelist' %}">
+        Payments
+      </a>
+    </div>
+  </div>
+
+  <div class="rt-dashboard-grid">
+
+    <a class="rt-card rt-card-indigo" href="{% url 'admin:orders_order_changelist' %}">
+      <div class="rt-card-icon">📦</div>
+      <div>
+        <h2>Orders</h2>
+        <p>Track client orders, editors, revisions, status history and deliveries.</p>
+      </div>
+    </a>
+
+    <a class="rt-card rt-card-cyan" href="{% url 'admin:orders_orderdelivery_changelist' %}">
+      <div class="rt-card-icon">🖼️</div>
+      <div>
+        <h2>Public Portfolio</h2>
+        <p>Review public deliveries, portfolio visibility and editor showcase content.</p>
+      </div>
+    </a>
+
+    <a class="rt-card rt-card-emerald" href="{% url 'admin:payments_transaction_changelist' %}">
+      <div class="rt-card-icon">💳</div>
+      <div>
+        <h2>Transactions</h2>
+        <p>Monitor wallet movements, deposits, withdrawals and payment records.</p>
+      </div>
+    </a>
+
+    <a class="rt-card rt-card-amber" href="{% url 'admin:payments_withdrawrequest_changelist' %}">
+      <div class="rt-card-icon">🏦</div>
+      <div>
+        <h2>Withdrawals</h2>
+        <p>Manage editor payout requests, bank details and payout status.</p>
+      </div>
+    </a>
+
+  </div>
+
+  <div class="rt-dashboard-section">
+    <div class="rt-section-header">
+      <div>
+        <h2>Quick Actions</h2>
+        <p>Fast access to the most used admin sections.</p>
+      </div>
+    </div>
+
+    <div class="rt-quick-actions">
+      <a href="{% url 'admin:orders_order_add' %}">+ New Order</a>
+      <a href="{% url 'admin:orders_ordercomment_changelist' %}">Comments</a>
+      <a href="{% url 'admin:orders_orderrating_changelist' %}">Ratings</a>
+      <a href="{% url 'admin:orders_ordernotification_changelist' %}">Notifications</a>
+      <a href="{% url 'admin:payments_wallet_changelist' %}">Wallets</a>
+      <a href="{% url 'admin:payments_sitecommissionsetting_changelist' %}">Commission Settings</a>
+    </div>
+  </div>
+
+  <div class="rt-dashboard-section">
+    <div class="rt-section-header">
+      <div>
+        <h2>Installed Apps</h2>
+        <p>Standard Django admin application list.</p>
+      </div>
+    </div>
+
+    <div class="rt-admin-app-list">
+      {% if app_list %}
+        {% for app in app_list %}
+          <div class="rt-app-module">
+            <h3>{{ app.name }}</h3>
+            <div class="rt-app-models">
+              {% for model in app.models %}
+                <a href="{{ model.admin_url|default:'#' }}">
+                  <span>{{ model.name }}</span>
+                  {% if model.add_url %}
+                    <small>Add</small>
+                  {% endif %}
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p>{% translate "You don't have permission to view or edit anything." %}</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
