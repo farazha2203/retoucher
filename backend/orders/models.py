@@ -48,6 +48,33 @@ class Order(models.Model):
     )
     revision_count = models.PositiveSmallIntegerField(default=0)
 
+    agreed_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=0,
+        default=0,
+        help_text="Final agreed order price.",
+    )
+    escrow_held = models.BooleanField(
+        default=False,
+        help_text="Whether the order amount is currently held in escrow.",
+    )
+    payment_settled = models.BooleanField(
+        default=False,
+        help_text="Whether final financial settlement has been completed.",
+    )
+    commission_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=0,
+        default=0,
+        help_text="Site commission amount for this order.",
+    )
+    editor_earning = models.DecimalField(
+        max_digits=14,
+        decimal_places=0,
+        default=0,
+        help_text="Editor earning after commission.",
+    )
+
     supervisor_approved_at = models.DateTimeField(blank=True, null=True)
     client_approved_at = models.DateTimeField(blank=True, null=True)
     settlement_started_at = models.DateTimeField(blank=True, null=True)
@@ -673,6 +700,11 @@ class OrderActivityLog(models.Model):
     metadata = models.JSONField(
         default=dict,
         blank=True,
+    )
+    tx_ref = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Related transaction reference.",
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

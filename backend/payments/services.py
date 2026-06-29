@@ -28,6 +28,28 @@ def get_or_create_wallet(user) -> Wallet:
     wallet, _ = Wallet.objects.get_or_create(user=user)
     return wallet
 
+def get_order_amount(order) -> Decimal:
+    """
+    مبلغ مالی سفارش را برمی‌گرداند.
+    فعلاً از agreed_price اگر وجود داشته باشد استفاده می‌کند،
+    در غیر این صورت از price.
+    اگر هیچ‌کدام وجود نداشت، خطای واضح می‌دهد.
+    """
+    amount = getattr(order, "agreed_price", None)
+
+    if amount is None:
+        amount = getattr(order, "price", None)
+
+    if amount is None:
+        raise ValidationError("مبلغ سفارش برای عملیات مالی تنظیم نشده است.")
+
+    amount = Decimal(str(amount))
+
+    if amount <= 0:
+        raise ValidationError("مبلغ سفارش باید بیشتر از صفر باشد.")
+
+    return amount
+
 
 def _record_transaction(
     wallet: Wallet,
@@ -103,7 +125,7 @@ def hold_for_order(order, created_by=None) -> Transaction:
     هنگام ثبت سفارش، مبلغ را از موجودی مشتری بلوکه کن.
     order باید فیلد price داشته باشد.
     """
-    amount = Decimal(str(order.price))
+    amount = get_order_amount(order)
     wallet = get_or_create_wallet(order.client)
     if not wallet.can_afford(amount):
         raise ValidationError("موجودی کیف‌پول کافی نیست.")
@@ -123,7 +145,7 @@ def hold_for_order(order, created_by=None) -> Transaction:
 @transaction.atomic
 def release_escrow(order, created_by=None) -> Transaction:
     """لغو سفارش → آزاد کردن مبلغ بلوکه‌شده"""
-    amount = Decimal(str(order.price))
+    amount = get_order_amount(order)
     wallet = get_or_create_wallet(order.client)
     wallet.unfreeze(amount)
     wallet.refresh_from_db()
@@ -150,7 +172,7 @@ def settle_order(order, admin_user) -> dict:
     3. مانده به کیف‌پول ادیتور واریز می‌شود
     Returns: {commission, editor_earning, client_tx, commission_tx, editor_tx}
     """
-    amount = Decimal(str(order.price))
+    amount = get_order_amount(order)
     commission_setting = SiteCommissionSetting.get_active()
     if not commission_setting:
         raise ValidationError("تنظیمات کمیسیون فعالی وجود ندارد.")
