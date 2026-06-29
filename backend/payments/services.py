@@ -40,17 +40,30 @@ def _record_transaction(
     created_by=None,
     meta: dict = None,
     status: str = Transaction.Status.SUCCESS,
+    balance_before: Decimal | None = None,
 ) -> Transaction:
+    if balance_before is None:
+        if tx_type in [
+            Transaction.TxType.PAYMENT,
+            Transaction.TxType.WITHDRAWAL,
+        ]:
+            balance_before = balance_after + amount
+        elif tx_type in [
+            Transaction.TxType.DEPOSIT,
+            Transaction.TxType.EDITOR_EARNING,
+            Transaction.TxType.REFUND,
+            Transaction.TxType.ADMIN_ADJUSTMENT,
+        ]:
+            balance_before = balance_after - amount
+        else:
+            balance_before = balance_after
+
     return Transaction.objects.create(
         wallet=wallet,
         tx_type=tx_type,
         status=status,
         amount=amount,
-        balance_before=balance_after - amount if tx_type not in [
-            Transaction.TxType.PAYMENT,
-            Transaction.TxType.WITHDRAWAL,
-            Transaction.TxType.ESCROW_HOLD,
-        ] else balance_after + amount,
+        balance_before=balance_before,
         balance_after=balance_after,
         order=order,
         payment_request=payment_request,
