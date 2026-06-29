@@ -1,112 +1,119 @@
-{% extends "admin/base_site.html" %}
-{% load i18n static %}
+{% extends "admin/index.html" %}
+{% load i18n %}
 
-{% block content %}
-<div class="rt-dashboard">
+{% block content_title %}
+  <div class="retoucher-dashboard">
 
-  <div class="rt-dashboard-hero">
-    <div>
-      <p class="rt-eyebrow">Retoucher Platform</p>
-      <h1>Control Panel</h1>
-      <p>
-        Manage orders, editors, public portfolio, payments and platform activity from one powerful dashboard.
-      </p>
-    </div>
+    <section class="dashboard-hero">
+      <div>
+        <h1>Retoucher Control Panel</h1>
+        <p>
+          Manage orders, public portfolios, payments, withdrawals, comments,
+          ratings, notifications and platform operations from one powerful dashboard.
+        </p>
+      </div>
+      <div class="dashboard-hero-badge">
+        Admin Dashboard
+      </div>
+    </section>
 
-    <div class="rt-hero-actions">
-      <a class="rt-primary-action" href="{% url 'admin:orders_order_changelist' %}">
-        Manage Orders
+    <div class="dashboard-grid">
+      <a class="dashboard-card" href="{% url 'admin:orders_order_changelist' %}">
+        <div class="dashboard-card-icon">📦</div>
+        <div>
+          <h3>Orders</h3>
+          <p>Manage client orders, editors, deadlines, revisions and order statuses.</p>
+        </div>
       </a>
-      <a class="rt-secondary-action" href="{% url 'admin:payments_paymentrequest_changelist' %}">
-        Payments
+
+      <a class="dashboard-card" href="{% url 'admin:orders_orderdelivery_changelist' %}">
+        <div class="dashboard-card-icon">🖼️</div>
+        <div>
+          <h3>Public Portfolio</h3>
+          <p>Review approved public deliveries and portfolio publication workflow.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:orders_ordercomment_changelist' %}">
+        <div class="dashboard-card-icon">💬</div>
+        <div>
+          <h3>Comments</h3>
+          <p>Moderate comments, replies, public feedback and order discussions.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:orders_orderrating_changelist' %}">
+        <div class="dashboard-card-icon">⭐</div>
+        <div>
+          <h3>Ratings</h3>
+          <p>Inspect editor ratings, client ratings and order review history.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:payments_transaction_changelist' %}">
+        <div class="dashboard-card-icon">💳</div>
+        <div>
+          <h3>Transactions</h3>
+          <p>Track wallet transactions, balances, payment records and references.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:payments_paymentrequest_changelist' %}">
+        <div class="dashboard-card-icon">🌐</div>
+        <div>
+          <h3>Payment Requests</h3>
+          <p>Monitor payment gateway requests, authorities, references and paid states.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:payments_withdrawrequest_changelist' %}">
+        <div class="dashboard-card-icon">🏦</div>
+        <div>
+          <h3>Withdrawals</h3>
+          <p>Manage editor withdrawal requests, card numbers, IBANs and payout statuses.</p>
+        </div>
+      </a>
+
+      <a class="dashboard-card" href="{% url 'admin:orders_ordernotification_changelist' %}">
+        <div class="dashboard-card-icon">🔔</div>
+        <div>
+          <h3>Notifications</h3>
+          <p>Review order notifications, recipients, actors and read timestamps.</p>
+        </div>
       </a>
     </div>
-  </div>
 
-  <div class="rt-dashboard-grid">
+    <section class="dashboard-section">
+      <h2>Application Modules</h2>
 
-    <a class="rt-card rt-card-indigo" href="{% url 'admin:orders_order_changelist' %}">
-      <div class="rt-card-icon">📦</div>
-      <div>
-        <h2>Orders</h2>
-        <p>Track client orders, editors, revisions, status history and deliveries.</p>
-      </div>
-    </a>
-
-    <a class="rt-card rt-card-cyan" href="{% url 'admin:orders_orderdelivery_changelist' %}">
-      <div class="rt-card-icon">🖼️</div>
-      <div>
-        <h2>Public Portfolio</h2>
-        <p>Review public deliveries, portfolio visibility and editor showcase content.</p>
-      </div>
-    </a>
-
-    <a class="rt-card rt-card-emerald" href="{% url 'admin:payments_transaction_changelist' %}">
-      <div class="rt-card-icon">💳</div>
-      <div>
-        <h2>Transactions</h2>
-        <p>Monitor wallet movements, deposits, withdrawals and payment records.</p>
-      </div>
-    </a>
-
-    <a class="rt-card rt-card-amber" href="{% url 'admin:payments_withdrawrequest_changelist' %}">
-      <div class="rt-card-icon">🏦</div>
-      <div>
-        <h2>Withdrawals</h2>
-        <p>Manage editor payout requests, bank details and payout status.</p>
-      </div>
-    </a>
-
-  </div>
-
-  <div class="rt-dashboard-section">
-    <div class="rt-section-header">
-      <div>
-        <h2>Quick Actions</h2>
-        <p>Fast access to the most used admin sections.</p>
-      </div>
-    </div>
-
-    <div class="rt-quick-actions">
-      <a href="{% url 'admin:orders_order_add' %}">+ New Order</a>
-      <a href="{% url 'admin:orders_ordercomment_changelist' %}">Comments</a>
-      <a href="{% url 'admin:orders_orderrating_changelist' %}">Ratings</a>
-      <a href="{% url 'admin:orders_ordernotification_changelist' %}">Notifications</a>
-      <a href="{% url 'admin:payments_wallet_changelist' %}">Wallets</a>
-      <a href="{% url 'admin:payments_sitecommissionsetting_changelist' %}">Commission Settings</a>
-    </div>
-  </div>
-
-  <div class="rt-dashboard-section">
-    <div class="rt-section-header">
-      <div>
-        <h2>Installed Apps</h2>
-        <p>Standard Django admin application list.</p>
-      </div>
-    </div>
-
-    <div class="rt-admin-app-list">
-      {% if app_list %}
+      <div class="dashboard-app-list">
         {% for app in app_list %}
-          <div class="rt-app-module">
+          <div class="dashboard-app">
             <h3>{{ app.name }}</h3>
-            <div class="rt-app-models">
+            <ul>
               {% for model in app.models %}
-                <a href="{{ model.admin_url|default:'#' }}">
-                  <span>{{ model.name }}</span>
-                  {% if model.add_url %}
-                    <small>Add</small>
+                <li>
+                  {% if model.admin_url %}
+                    <a href="{{ model.admin_url }}">{{ model.name }}</a>
+                  {% else %}
+                    <span>{{ model.name }}</span>
                   {% endif %}
-                </a>
+
+                  <div class="dashboard-model-actions">
+                    {% if model.add_url %}
+                      <a href="{{ model.add_url }}">Add</a>
+                    {% endif %}
+                    {% if model.admin_url %}
+                      <a href="{{ model.admin_url }}">View</a>
+                    {% endif %}
+                  </div>
+                </li>
               {% endfor %}
-            </div>
+            </ul>
           </div>
         {% endfor %}
-      {% else %}
-        <p>{% translate "You don't have permission to view or edit anything." %}</p>
-      {% endif %}
-    </div>
-  </div>
+      </div>
+    </section>
 
-</div>
+  </div>
 {% endblock %}
