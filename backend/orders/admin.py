@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 
 from .models import (
     Order,
@@ -14,6 +16,16 @@ from .models import (
 )
 
 
+def money(value):
+    if value is None:
+        return "—"
+    return f"{int(value):,} تومان"
+
+
+def admin_change_url(app_label, model_name, object_id):
+    return reverse(f"admin:{app_label}_{model_name}_change", args=[object_id])
+
+
 class OrderImageInline(admin.TabularInline):
     model = OrderImage
     extra = 0
@@ -25,15 +37,22 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "title",
-        "client",
-        "editor",
-        "status",
+        "client_link",
+        "editor_link",
+        "status_badge",
+        "agreed_price_display",
+        "escrow_badge",
+        "settlement_badge",
+        "commission_display",
+        "editor_earning_display",
         "revision_count",
         "deadline",
         "created_at",
     )
     list_filter = (
         "status",
+        "escrow_held",
+        "payment_settled",
         "created_at",
         "deadline",
     )
@@ -60,6 +79,15 @@ class OrderAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "revision_count",
+        "commission_amount",
+        "editor_earning",
+        "payment_settled",
+        "settlement_admin_link",
+    )
+    list_per_page = 50
+    actions = (
+        "mark_settlement_pending",
+        "clear_settlement_flags",
     )
 
     fieldsets = (
@@ -83,6 +111,19 @@ class OrderAdmin(admin.ModelAdmin):
             },
         ),
         (
+            "Financial / Settlement",
+            {
+                "fields": (
+                    "agreed_price",
+                    "escrow_held",
+                    "payment_settled",
+                    "commission_amount",
+                    "editor_earning",
+                    "settlement_admin_link",
+                )
+            },
+        ),
+        (
             "Timing",
             {
                 "fields": (
@@ -94,6 +135,141 @@ class OrderAdmin(admin.ModelAdmin):
         ),
         ("Counters", {"fields": ("revision_count",)}),
     )
+
+    def client_link(self, obj):
+        if not obj.client_id:
+            return "—"
+        url = admin_change_url("accounts", "user", obj.client_id)
+        return format_html('<a href="{}">{}</a>', url, obj.client.username)
+
+    client_link.short_description = "Client"
+    client_link.admin_order_field = "client__username"
+
+    def editor_link(self, obj):
+        if not obj.editor_id:
+            return "—"
+        url = admin_change_url("accounts", "user", obj.editor_id)
+        return format_html('<a href="{}">{}</a>', url, obj.editor.username)
+
+    editor_link.short_description = "Editor"
+    editor_link.admin_order_field = "editor__username"
+
+    def status_badge(self, obj):
+        colors = {
+            "draft": "#6b7280",
+            "pending": "#f59e0b",
+            "assigned": "#3b82f6",
+            "in_progress": "#6366f1",
+            "delivered": "#06b6d4",
+            "revision_requested": "#f97316",
+            "completed": "#10b981",
+            "settlement_pending": "#8b5cf6",
+            "paid": "#059669",
+            "cancelled": "#ef4444",
+        }
+        color = colors.get(obj.status, "#6b7280")
+        label = (
+            obj.get_status_display()
+            if hasattr(obj, "get_status_display")
+            else obj.status
+        )
+        return format_html(
+            '<span style="background:{};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{}</span>',
+            color,
+            label,
+        )
+
+    status_badge.short_description = "Status"
+    status_badge.admin_order_field = "status"
+
+    def agreed_price_display(self, obj):
+        if getattr(obj, "agreed_price", 0) > 0:
+            return format_html("<b>{}</b>", money(obj.agreed_price))
+        return "—"
+
+    agreed_price_display.short_description = "Agreed price"
+    agreed_price_display.admin_order_field = "agreed_price"
+
+    def commission_display(self, obj):
+        if getattr(obj, "commission_amount", 0) > 0:
+            return format_html(
+                '<span style="color:#8b5cf6">{}</span>',
+                money(obj.commission_amount),
+            )
+        return "—"
+
+    commission_display.short_description = "Commission"
+    commission_display.admin_order_field = "commission_amount"
+
+    def editor_earning_display(self, obj):
+        if getattr(obj, "editor_earning", 0) > 0:
+            return format_html(
+                '<span style="color:#10b981">{}</span>',
+                money(obj.editor_earning),
+            )
+        return "—"
+
+    editor_earning_display.short_description = "Editor earning"
+    editor_earning_display.admin_order_field = "editor_earning"
+
+    def escrow_badge(self, obj):
+        if getattr(obj, "escrow_held", False):
+            return format_html(
+                '<span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:4px;font-size:11px">Escrow</span>'
+            )
+        return format_html('<span style="color:#6b7280">—</span>')
+
+    escrow_badge.short_description = "Escrow"
+    escrow_badge.admin_order_field = "escrow_held"
+
+    def settlement_badge(self, obj):
+        if getattr(obj, "payment_settled", False):
+            return format_html(
+                '<span style="background:#10b981;color:white;padding:2px 8px;border-radius:4px;font-size:11px">Settled</span>'
+            )
+        return format_html(
+            '<span style="background:#6b7280;color:white;padding:2px 8px;border-radius:4px;font-size:11px">Open</span>'
+        )
+
+    settlement_badge.short_description = "Settlement"
+    settlement_badge.admin_order_field = "payment_settled"
+
+    def settlement_admin_link(self, obj):
+        if not obj.pk:
+            return "بعد از ذخیره سفارش فعال می‌شود."
+
+        # API route, not Django admin route
+        url = f"/api/payments/settlement/{obj.pk}/detail/"
+        return format_html(
+            '<a href="{}" target="_blank" style="font-weight:bold">مشاهده جزئیات settlement</a>',
+            url,
+        )
+
+    settlement_admin_link.short_description = "Settlement API"
+
+    @admin.action(description="Mark selected orders as settlement pending")
+    def mark_settlement_pending(self, request, queryset):
+        updated = queryset.update(
+            status=Order.Status.SETTLEMENT_PENDING,
+            payment_settled=False,
+        )
+        self.message_user(
+            request,
+            f"{updated} order(s) marked as settlement pending.",
+        )
+
+    @admin.action(description="Clear selected settlement flags")
+    def clear_settlement_flags(self, request, queryset):
+        updated = queryset.update(
+            escrow_held=False,
+            payment_settled=False,
+            commission_amount=0,
+            editor_earning=0,
+        )
+        self.message_user(
+            request,
+            f"{updated} order(s) settlement flags cleared.",
+        )
 
 
 @admin.register(OrderDelivery)
@@ -530,6 +706,7 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
         "order",
         "activity_type",
         "actor",
+        "tx_ref",
         "created_at",
     )
     search_fields = (
@@ -537,6 +714,7 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
         "actor__username",
         "actor__email",
         "message",
+        "tx_ref",
     )
     list_filter = (
         "activity_type",
@@ -563,6 +741,7 @@ class OrderActivityLogAdmin(admin.ModelAdmin):
                     "activity_type",
                     "actor",
                     "message",
+                    "tx_ref",
                 )
             },
         ),
