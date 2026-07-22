@@ -7,6 +7,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { authAPI } from '@/lib/api/auth';
 import { getApiErrorMessage } from '@/lib/api/client';
 import { useAuthStore } from '@/lib/stores/auth.store';
+import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -146,16 +147,7 @@ export default function LoginPage() {
             <div className="flex-1 h-px bg-gray-100" />
           </div>
 
-          <div className="flex gap-3">
-            {[
-              { icon: '🔵', label: 'Google' },
-              { icon: '⚫', label: 'Apple' },
-            ].map((s) => (
-              <button key={s.label} type="button" className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border transition-colors hover:bg-gray-50" style={{ borderColor: '#EBEBF0', color: '#2D2D3A', fontFamily: 'inherit' }}>
-                <span>{s.icon}</span> {s.label}
-              </button>
-            ))}
-          </div>
+          <GoogleAuthButton label="ورود با گوگل" />
         </form>
       </div>
     </div>

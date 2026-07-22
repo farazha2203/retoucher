@@ -1,0 +1,3 @@
+'use client';
+const DJANGO_BASE_URL=process.env.NEXT_PUBLIC_DJANGO_BASE_URL??'http://127.0.0.1:8000';
+export function GoogleAuthButton({label='ورود یا عضویت با گوگل'}:{label?:string}){const start=()=>{const url=new URL('/accounts/google/login/',DJANGO_BASE_URL);url.searchParams.set('process','login');url.searchParams.set('next','/api/accounts/frontend-bridge/');window.location.assign(url.toString());};return <button type="button" onClick={start} className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"><span className="text-base font-bold text-blue-600">G</span>{label}</button>}

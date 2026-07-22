@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { authAPI } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/stores/auth.store';
 import type { UserRole } from '@/types';
+import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 
 type PublicRole = Extract<UserRole, 'client' | 'editor'>;
 
@@ -137,6 +138,8 @@ export default function RegisterPage() {
           در این مرحله فقط حساب کارفرما و ادیتور قابل ثبت است. حساب آتلیه بعداً
           به‌صورت سازمانی پیاده‌سازی می‌شود.
         </p>
+
+        <div className="mt-7"><GoogleAuthButton label="عضویت سریع با گوگل" /><div className="my-5 flex items-center gap-3"><div className="h-px flex-1 bg-gray-100" /><span className="text-xs text-gray-400">یا ثبت‌نام با فرم</span><div className="h-px flex-1 bg-gray-100" /></div></div>
 
         <div className="mt-7 grid grid-cols-2 gap-3">
           {roles.map((item) => (

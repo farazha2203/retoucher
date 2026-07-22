@@ -526,3 +526,6 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 # Legacy SmartBase is retained temporarily; Velzon is the operational panel.
 SILENCED_SYSTEM_CHECKS = ["sbadmin.W003"]
+
+FRONTEND_AUTH_CALLBACK_URL = os.getenv("FRONTEND_AUTH_CALLBACK_URL", "http://localhost:3000/auth/callback")
+SOCIAL_EXCHANGE_CODE_TTL_SECONDS = env_int("SOCIAL_EXCHANGE_CODE_TTL_SECONDS", default=60)

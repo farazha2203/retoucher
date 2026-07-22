@@ -142,3 +142,21 @@ class EditorPortfolioItem(models.Model):
 
     def __str__(self):
         return f"{self.editor} - {self.title}"
+
+
+class SocialAuthExchangeCode(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="social_auth_exchange_codes")
+    code_digest = models.CharField(max_length=64, unique=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    requested_ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [models.Index(fields=("expires_at", "used_at"))]
+
+    def __str__(self):
+        return f"{self.user_id} - {self.created_at:%Y-%m-%d %H:%M:%S}"
+
