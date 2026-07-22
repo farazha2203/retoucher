@@ -1,0 +1,53 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-xl-10">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div><h4 class="mb-1">ثبت پروژه جدید</h4><p class="text-muted mb-0">نوع درخواست، سبک، بودجه و ادیتور هدف را انتخاب کنید.</p></div>
+      <a href="{% url 'control_panel:projects' %}" class="btn btn-soft-primary">بازگشت</a>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-4">
+        <div class="row g-3 mb-4">
+          <div class="col-md-3"><div class="border rounded p-3 h-100"><strong>درخواست مستقیم</strong><div class="small text-muted mt-1">ارسال برای ادیتور مشخص</div></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 h-100"><strong>پیشنهاد عمومی</strong><div class="small text-muted mt-1">دریافت قیمت از ادیتورها</div></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 h-100"><strong>چالش نمونه</strong><div class="small text-muted mt-1">دریافت نمونه و بررسی</div></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 h-100"><strong>مدیریت‌شده</strong><div class="small text-muted mt-1">تخصیص توسط تیم مدیریت</div></div></div>
+        </div>
+
+        <form method="post">{% csrf_token %}
+          {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+          <div class="row g-4">
+            {% for field in form %}
+            <div class="{% if field.name == 'description' %}col-12{% elif field.name == 'client_note' %}col-12{% else %}col-md-6{% endif %}" data-project-field="{{ field.name }}">
+              <label class="form-label fw-semibold">{{ field.label }}</label>
+              {{ field }}
+              {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+          <div class="d-flex justify-content-end gap-2 mt-4">
+            <a href="{% url 'control_panel:projects' %}" class="btn btn-light">انصراف</a>
+            <button class="btn btn-success px-5"><i class="ri-folder-add-line me-1"></i>ثبت پروژه</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const type = document.getElementById("id_request_type");
+  const target = document.querySelector('[data-project-field="target_editor"]');
+  function syncFields() {
+    if (!type || !target) return;
+    target.style.display = type.value === "direct_editor" ? "" : "none";
+  }
+  type?.addEventListener("change", syncFields);
+  syncFields();
+})();
+</script>
+{% endblock %}

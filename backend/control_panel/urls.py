@@ -10,9 +10,11 @@ urlpatterns = [
     path("logout/", views.PanelLogoutView.as_view(), name="logout"),
 
     path("orders/", views.orders_list, name="orders"),
+    path("orders/new/", views.order_create, name="order_create"),
     path("orders/<int:pk>/", views.order_detail, name="order_detail"),
     path("orders/<int:pk>/actions/<slug:action_key>/", views.order_workflow_action, name="order_workflow_action"),
     path("projects/", views.projects_list, name="projects"),
+    path("projects/new/", views.project_create, name="project_create"),
     path("projects/<int:pk>/", views.project_detail, name="project_detail"),
     path("projects/<int:pk>/actions/<slug:action_key>/", views.project_workflow_action, name="project_workflow_action"),
     path("users/", views.users_list, name="users"),

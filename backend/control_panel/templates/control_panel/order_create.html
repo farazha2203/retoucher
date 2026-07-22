@@ -1,0 +1,34 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-xl-9">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div><h4 class="mb-1">ثبت سفارش جدید</h4><p class="text-muted mb-0">سفارش ابتدا به‌صورت پیش‌نویس ایجاد می‌شود.</p></div>
+      <a href="{% url 'control_panel:orders' %}" class="btn btn-soft-primary">بازگشت</a>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-4">
+        <div class="alert alert-info">
+          <i class="ri-information-line me-2"></i>
+          پس از ایجاد سفارش وارد Workspace می‌شوید؛ در آنجا تصاویر را بارگذاری و سفارش را برای بررسی ارسال می‌کنید.
+        </div>
+        <form method="post">{% csrf_token %}
+          {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+          {% for field in form %}
+          <div class="mb-4">
+            <label class="form-label fw-semibold">{{ field.label }}</label>
+            {{ field }}
+            {% for error in field.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+          </div>
+          {% endfor %}
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{% url 'control_panel:orders' %}" class="btn btn-light">انصراف</a>
+            <button class="btn btn-primary px-5"><i class="ri-add-circle-line me-1"></i>ایجاد سفارش</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

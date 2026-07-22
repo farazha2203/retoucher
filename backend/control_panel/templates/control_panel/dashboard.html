@@ -20,6 +20,48 @@
   </div>
 </div>
 
+
+{% if panel_is_client %}
+<div class="row mb-3">
+  <div class="col-md-6">
+    <a href="{% url 'control_panel:order_create' %}" class="text-decoration-none">
+      <div class="card card-animate border border-primary">
+        <div class="card-body d-flex align-items-center">
+          <div class="avatar-lg me-3">
+            <span class="avatar-title rounded bg-primary-subtle text-primary fs-2">
+              <i class="ri-shopping-bag-3-line"></i>
+            </span>
+          </div>
+          <div class="flex-grow-1">
+            <h5 class="text-body mb-1">ثبت سفارش مستقیم</h5>
+            <p class="text-muted mb-0">سفارش را به‌صورت پیش‌نویس ایجاد و فایل‌ها را در Workspace اضافه کنید.</p>
+          </div>
+          <i class="ri-arrow-left-line fs-3 text-primary"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-6">
+    <a href="{% url 'control_panel:project_create' %}" class="text-decoration-none">
+      <div class="card card-animate border border-success">
+        <div class="card-body d-flex align-items-center">
+          <div class="avatar-lg me-3">
+            <span class="avatar-title rounded bg-success-subtle text-success fs-2">
+              <i class="ri-folder-add-line"></i>
+            </span>
+          </div>
+          <div class="flex-grow-1">
+            <h5 class="text-body mb-1">ثبت پروژه و دریافت پیشنهاد</h5>
+            <p class="text-muted mb-0">درخواست مستقیم، عمومی، چالش نمونه یا مدیریت‌شده بسازید.</p>
+          </div>
+          <i class="ri-arrow-left-line fs-3 text-success"></i>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+{% endif %}
+
 <div class="row">
   {% for item in primary_kpis %}
   <div class="col-xl-3 col-md-6">

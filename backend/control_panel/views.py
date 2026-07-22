@@ -13,10 +13,17 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from orders.views import OrderViewSet
+from projects.views import ProjectRequestViewSet
+
 from .forms import (
     AdminUserCreateForm,
     AdminUserUpdateForm,
     EditorProfileAdminForm,
+    PanelOrderCreateForm,
+    PanelProjectCreateForm,
 )
 
 
@@ -176,6 +183,135 @@ def _monthly_series(model, date_field, months=8):
 def dashboard(request):
     context = build_dashboard_context(request.user)
     return render(request, "control_panel/dashboard.html", context)
+
+
+def _add_drf_errors_to_form(form, errors):
+    if not isinstance(errors, dict):
+        form.add_error(None, str(errors))
+        return
+
+    for field_name, messages_list in errors.items():
+        target = field_name if field_name in form.fields else None
+        if isinstance(messages_list, (list, tuple)):
+            for message in messages_list:
+                form.add_error(target, str(message))
+        else:
+            form.add_error(target, str(messages_list))
+
+
+def _execute_create_viewset(*, request, viewset_class, path, data):
+    factory = APIRequestFactory()
+    api_request = factory.post(path, data=data, format="multipart")
+    force_authenticate(api_request, user=request.user)
+    api_view = viewset_class.as_view({"post": "create"})
+    return api_view(api_request)
+
+
+@login_required
+def order_create(request):
+    if getattr(request.user, "role", "") != "client":
+        raise PermissionDenied
+
+    form = PanelOrderCreateForm(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        payload = {
+            "title": form.cleaned_data["title"],
+            "description": form.cleaned_data.get("description") or "",
+        }
+        deadline = form.cleaned_data.get("deadline")
+        if deadline:
+            payload["deadline"] = deadline.isoformat()
+
+        api_response = _execute_create_viewset(
+            request=request,
+            viewset_class=OrderViewSet,
+            path="/api/orders/",
+            data=payload,
+        )
+
+        if api_response.status_code == 201:
+            order_id = api_response.data["id"]
+            messages.success(
+                request,
+                "سفارش با موفقیت ایجاد شد. اکنون فایل‌ها را اضافه و سفارش را ارسال کنید.",
+            )
+            return redirect("control_panel:order_detail", pk=order_id)
+
+        _add_drf_errors_to_form(form, api_response.data)
+
+    return render(
+        request,
+        "control_panel/order_create.html",
+        {
+            "page_title": "ثبت سفارش جدید",
+            "form": form,
+        },
+    )
+
+
+@login_required
+def project_create(request):
+    if getattr(request.user, "role", "") != "client":
+        raise PermissionDenied
+
+    form = PanelProjectCreateForm(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        cleaned = form.cleaned_data
+        payload = {
+            "request_type": cleaned["request_type"],
+            "title": cleaned["title"],
+            "description": cleaned.get("description") or "",
+            "edit_style": cleaned["edit_style"].pk,
+            "budget_min": cleaned.get("budget_min") or 0,
+            "budget_max": cleaned.get("budget_max") or 0,
+            "client_note": cleaned.get("client_note") or "",
+        }
+
+        if cleaned.get("package"):
+            payload["package"] = cleaned["package"].pk
+        if cleaned.get("target_editor"):
+            payload["target_editor"] = cleaned["target_editor"].pk
+        if cleaned.get("preferred_deadline"):
+            payload["preferred_deadline"] = (
+                cleaned["preferred_deadline"].isoformat()
+            )
+
+        api_response = _execute_create_viewset(
+            request=request,
+            viewset_class=ProjectRequestViewSet,
+            path="/api/projects/requests/",
+            data=payload,
+        )
+
+        if api_response.status_code == 201:
+            project_id = api_response.data["id"]
+            messages.success(
+                request,
+                "پروژه با موفقیت ثبت شد و Workflow مربوط به نوع درخواست فعال گردید.",
+            )
+            return redirect(
+                "control_panel:project_detail",
+                pk=project_id,
+            )
+
+        _add_drf_errors_to_form(form, api_response.data)
+
+    return render(
+        request,
+        "control_panel/project_create.html",
+        {
+            "page_title": "ثبت پروژه جدید",
+            "form": form,
+            "request_type_help": {
+                "direct_editor": "ارسال مستقیم درخواست برای یک ادیتور مشخص",
+                "public_quote": "دریافت پیشنهاد قیمت از ادیتورهای واجد شرایط",
+                "sample_challenge": "دریافت نمونه و بررسی توسط ناظر",
+                "managed_order": "انتخاب و تخصیص ادیتور توسط مدیریت",
+            },
+        },
+    )
 
 
 @login_required

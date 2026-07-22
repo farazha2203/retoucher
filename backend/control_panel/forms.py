@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
 
 from accounts.models import EditorProfile
-from catalog.models import EditStyle
+from catalog.models import EditPackage, EditStyle
+from projects.models import ProjectRequest
 
 
 User = get_user_model()
@@ -151,3 +152,157 @@ class EditorProfileAdminForm(forms.ModelForm):
             "accepts_sample_challenges": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "admin_note": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
         }
+
+
+
+class PanelOrderCreateForm(forms.Form):
+    title = forms.CharField(
+        label="عنوان سفارش",
+        max_length=255,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "مثلاً روتوش حرفه‌ای تصاویر مراسم",
+            }
+        ),
+    )
+    description = forms.CharField(
+        label="شرح کامل سفارش",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 7,
+                "placeholder": "توضیحات، جزئیات و انتظارات خود را بنویسید.",
+            }
+        ),
+    )
+    deadline = forms.DateTimeField(
+        label="مهلت ترجیحی",
+        required=False,
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%dT%H:%M",
+            attrs={"class": "form-control", "type": "datetime-local"},
+        ),
+    )
+
+
+class PanelProjectCreateForm(forms.Form):
+    request_type = forms.ChoiceField(
+        label="نوع درخواست",
+        choices=ProjectRequest.RequestType.choices,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    title = forms.CharField(
+        label="عنوان پروژه",
+        max_length=180,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "عنوان کوتاه و شفاف پروژه",
+            }
+        ),
+    )
+    description = forms.CharField(
+        label="شرح پروژه",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 7,
+                "placeholder": "جزئیات کار، سبک موردنظر و خروجی مطلوب",
+            }
+        ),
+    )
+    edit_style = forms.ModelChoiceField(
+        label="سبک ویرایش",
+        queryset=EditStyle.objects.none(),
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    package = forms.ModelChoiceField(
+        label="بسته خدمات",
+        queryset=EditPackage.objects.none(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    target_editor = forms.ModelChoiceField(
+        label="ادیتور هدف",
+        queryset=EditorProfile.objects.none(),
+        required=False,
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+    budget_min = forms.IntegerField(
+        label="حداقل بودجه",
+        min_value=0,
+        required=False,
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
+    )
+    budget_max = forms.IntegerField(
+        label="حداکثر بودجه",
+        min_value=0,
+        required=False,
+        widget=forms.NumberInput(attrs={"class": "form-control"}),
+    )
+    preferred_deadline = forms.DateTimeField(
+        label="مهلت ترجیحی",
+        required=False,
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(
+            format="%Y-%m-%dT%H:%M",
+            attrs={"class": "form-control", "type": "datetime-local"},
+        ),
+    )
+    client_note = forms.CharField(
+        label="یادداشت مشتری",
+        required=False,
+        widget=forms.Textarea(
+            attrs={"class": "form-control", "rows": 3}
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["edit_style"].queryset = (
+            EditStyle.objects.filter(is_active=True)
+            .select_related("category")
+            .order_by("category__sort_order", "sort_order", "title")
+        )
+        self.fields["package"].queryset = (
+            EditPackage.objects.filter(is_active=True, style__is_active=True)
+            .select_related("style")
+            .order_by("style__title", "sort_order", "price")
+        )
+        self.fields["target_editor"].queryset = (
+            EditorProfile.objects.filter(
+                is_available=True,
+                accepts_direct_requests=True,
+                user__is_active=True,
+            )
+            .select_related("user")
+            .order_by("-rating_average", "display_name")
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        request_type = cleaned.get("request_type")
+        target_editor = cleaned.get("target_editor")
+        edit_style = cleaned.get("edit_style")
+        package = cleaned.get("package")
+
+        if (
+            request_type == ProjectRequest.RequestType.DIRECT_EDITOR
+            and target_editor is None
+        ):
+            self.add_error(
+                "target_editor",
+                "برای درخواست مستقیم باید ادیتور انتخاب شود.",
+            )
+
+        if package and edit_style and package.style_id != edit_style.id:
+            self.add_error(
+                "package",
+                "بسته انتخابی باید متعلق به سبک انتخاب‌شده باشد.",
+            )
+
+        return cleaned
