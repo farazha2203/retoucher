@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────
+   IRANSans FaNum
+   Local Persian font with Persian numerals
+───────────────────────────────────────── */
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum_UltraLight.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum_Light.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum_Medium.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum_Bold.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IRANSans";
+  src: url("/fonts/iransans/IRANSansWeb_FaNum_Black.woff")
+    format("woff");
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+}
+
+/* Tailwind 4 design token */
+
+@theme inline {
+  --font-sans:
+    "IRANSans", Tahoma, Arial, system-ui, sans-serif;
+}
+
+/* Global document typography */
+
+html {
+  direction: rtl;
+  text-align: right;
+  font-family:
+    "IRANSans",
+    Tahoma,
+    Arial,
+    system-ui,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body,
+button,
+input,
+textarea,
+select,
+option {
+  font-family:
+    "IRANSans",
+    Tahoma,
+    Arial,
+    system-ui,
+    sans-serif;
+}
+
+body {
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.75;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family:
+    "IRANSans",
+    Tahoma,
+    Arial,
+    system-ui,
+    sans-serif;
+  line-height: 1.45;
+  letter-spacing: -0.015em;
+}
+
+h1,
+h2 {
+  font-weight: 900;
+}
+
+h3,
+h4 {
+  font-weight: 700;
+}
+
+strong,
+b {
+  font-weight: 700;
+}
+
+html[dir="rtl"] {
+  text-align: right;
+}

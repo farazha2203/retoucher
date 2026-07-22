@@ -1,0 +1,1 @@
+document.addEventListener("DOMContentLoaded",function(){const current=window.location.pathname;document.querySelectorAll(".navbar-nav .nav-link").forEach(function(link){const href=link.getAttribute("href");if(href&&href!=="/"&&current.startsWith(href)){link.classList.add("active");link.setAttribute("aria-current","page")}})});

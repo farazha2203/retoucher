@@ -1,0 +1,155 @@
+/* ================================
+   Retoucher Admin Dashboard Fixes
+================================ */
+
+.retoucher-admin-dashboard #content {
+    padding: 28px;
+}
+
+.retoucher-admin-dashboard #content-main {
+    width: 100%;
+}
+
+.dashboard-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.dashboard-section-header h2 {
+    margin: 0 0 6px;
+}
+
+.dashboard-section-header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.dashboard-app span {
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+.dashboard-model-actions a.addlink,
+.dashboard-model-actions a.changelink {
+    background-image: none;
+    padding-left: 9px;
+}
+
+.retoucher-admin-dashboard .module {
+    display: none;
+}
+
+.retoucher-admin-dashboard #content-related {
+    display: none;
+}
+
+.retoucher-admin-dashboard .dashboard-section .module {
+    display: block;
+}
+
+/* Remove Django default dashboard spacing artifacts */
+.retoucher-admin-dashboard .app-auth,
+.retoucher-admin-dashboard .app-accounts,
+.retoucher-admin-dashboard .app-orders,
+.retoucher-admin-dashboard .app-payments,
+.retoucher-admin-dashboard .app-notifications,
+.retoucher-admin-dashboard .app-projects,
+.retoucher-admin-dashboard .app-catalog {
+    margin-top: 0;
+}
+
+/* ================================
+   Retoucher Admin Metrics
+================================ */
+
+.dashboard-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.dashboard-metric-card {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 16px;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    min-height: 86px;
+}
+
+.dashboard-metric-icon {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 15px;
+    background: #eef2ff;
+    font-size: 22px;
+}
+
+.dashboard-metric-value {
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 900;
+    color: var(--text-main);
+    letter-spacing: -0.04em;
+}
+
+.dashboard-metric-label {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.dashboard-metric-card:nth-child(1) .dashboard-metric-icon {
+    background: #eef2ff;
+}
+
+.dashboard-metric-card:nth-child(2) .dashboard-metric-icon {
+    background: #fff7ed;
+}
+
+.dashboard-metric-card:nth-child(3) .dashboard-metric-icon {
+    background: #ecfeff;
+}
+
+.dashboard-metric-card:nth-child(4) .dashboard-metric-icon {
+    background: #fdf2f8;
+}
+
+.dashboard-metric-card:nth-child(5) .dashboard-metric-icon {
+    background: #ecfdf5;
+}
+
+.dashboard-metric-card:nth-child(6) .dashboard-metric-icon {
+    background: #f1f5f9;
+}
+
+@media (max-width: 1300px) {
+    .dashboard-metrics-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .dashboard-metrics-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
+    .dashboard-metrics-grid {
+        grid-template-columns: 1fr;
+    }
+}

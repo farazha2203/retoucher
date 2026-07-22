@@ -1,0 +1,85 @@
+{% extends "control_panel/base.html" %}
+{% load humanize %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center gap-3">
+      <div class="avatar-md"><span class="avatar-title rounded bg-success-subtle text-success fs-2"><i class="ri-folder-3-line"></i></span></div>
+      <div><div class="d-flex align-items-center gap-2"><h4 class="mb-0">{{ project.title }}</h4><span class="badge bg-success-subtle text-success">{{ project.get_status_display }}</span></div><p class="text-muted mb-0 mt-1">پروژه #{{ project.pk }} · {{ project.get_request_type_display }}</p></div>
+    </div>
+  </div>
+  <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">{% if is_project_staff %}<a href="{{ system_admin_url }}" class="btn btn-soft-secondary">ویرایش فنی</a>{% endif %}<a href="{% url 'control_panel:projects' %}" class="btn btn-soft-primary">بازگشت</a></div>
+</div>
+
+<div class="card"><div class="card-body"><div class="d-flex justify-content-between mb-2"><div><strong>پیشرفت Workflow پروژه</strong><div class="small text-muted">{{ project.get_request_type_display }}</div></div><span class="badge bg-success fs-14">{{ progress_percent }}٪</span></div><div class="progress progress-lg" style="height:16px"><div class="progress-bar bg-success progress-bar-striped progress-bar-animated" style="width:{{ progress_percent }}%"></div></div></div></div>
+
+<div class="row">
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header border-0 pb-0">
+        <ul class="nav nav-tabs nav-tabs-custom card-header-tabs">
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#project-overview">نمای کلی</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#project-proposals">پیشنهادها <span class="badge bg-light text-dark">{{ project_workspace_counts.proposals }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#project-images">تصاویر <span class="badge bg-light text-dark">{{ project_workspace_counts.images }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#project-activity">Timeline</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#project-files">فایل‌ها <span class="badge bg-light text-dark">{{ project_workspace_counts.files }}</span></a></li>
+        </ul>
+      </div>
+      <div class="card-body"><div class="tab-content">
+        <div class="tab-pane active" id="project-overview">
+          <div class="row g-3">
+            <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">مشتری</small><h6>{{ project.client.get_full_name|default:project.client.username }}</h6></div></div>
+            <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">ادیتور هدف</small><h6>{{ project.target_editor.display_name|default:"عمومی / تعیین نشده" }}</h6></div></div>
+            <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">مهلت ترجیحی</small><h6>{{ project.preferred_deadline|date:"Y/m/d H:i"|default:"تعیین نشده" }}</h6></div></div>
+            <div class="col-12"><div class="border rounded p-3"><small class="text-muted">شرح درخواست</small><p class="mb-0 mt-2">{{ project.description|linebreaksbr }}</p></div></div>
+          </div>
+          <div class="row g-3 mt-1"><div class="col-md-4"><div class="card bg-primary-subtle border-0 mb-0"><div class="card-body"><small>بودجه حداقل</small><h5>{{ project.budget_min|intcomma }}</h5></div></div></div><div class="col-md-4"><div class="card bg-info-subtle border-0 mb-0"><div class="card-body"><small>بودجه حداکثر</small><h5>{{ project.budget_max|intcomma }}</h5></div></div></div><div class="col-md-4"><div class="card bg-warning-subtle border-0 mb-0"><div class="card-body"><small>تعداد تصاویر</small><h5>{{ project.image_count }}</h5></div></div></div></div>
+        </div>
+
+        <div class="tab-pane" id="project-proposals">
+          {% for proposal in visible_proposals %}
+          <div class="border rounded p-3 mb-3">
+            <div class="d-flex justify-content-between align-items-start"><div><h6>{{ proposal.editor.display_name|default:proposal.editor.user.username }}</h6><div class="small text-muted">امتیاز {{ proposal.editor.rating_average }} · {{ proposal.estimated_delivery_hours }} ساعت</div></div><span class="badge bg-primary-subtle text-primary">{{ proposal.get_status_display }}</span></div>
+            <div class="row mt-3"><div class="col-md-4"><small class="text-muted">قیمت پیشنهادی</small><h6>{{ proposal.proposed_price|intcomma }}</h6></div>{% if is_project_staff %}<div class="col-md-4"><small class="text-muted">دستمزد ادیتور</small><h6>{{ proposal.editor_fee|intcomma }}</h6></div><div class="col-md-4"><small class="text-muted">امتیاز ناظر</small><h6>{{ proposal.supervisor_score|default:"—" }}</h6></div>{% endif %}</div>
+            <p class="mb-0">{{ proposal.editor_note|default:"بدون توضیح" }}</p>
+            {% if proposal.sample_file %}<a href="{{ proposal.sample_file.url }}" target="_blank" class="btn btn-sm btn-soft-success mt-2">مشاهده نمونه</a>{% endif %}
+          </div>
+          {% empty %}<div class="text-center text-muted py-4">پیشنهادی قابل مشاهده نیست.</div>{% endfor %}
+        </div>
+
+        <div class="tab-pane" id="project-images"><div class="row g-3">{% for image in project_images %}<div class="col-md-4"><div class="border rounded overflow-hidden"><a href="{{ image.image.url }}" target="_blank"><img src="{{ image.image.url }}" class="img-fluid w-100" style="height:180px;object-fit:cover"></a><div class="p-2">{{ image.caption|default:"بدون عنوان" }}{% if image.is_sample_image %}<span class="badge bg-warning-subtle text-warning ms-1">نمونه</span>{% endif %}</div></div></div>{% empty %}<div class="col-12 text-center text-muted py-4">تصویری ثبت نشده است.</div>{% endfor %}</div></div>
+
+        <div class="tab-pane" id="project-activity"><div class="acitivity-timeline">{% for item in project_activities %}<div class="acitivity-item d-flex mb-4"><div class="avatar-xs acitivity-avatar"><div class="avatar-title rounded-circle bg-success-subtle text-success"><i class="ri-flashlight-line"></i></div></div><div class="flex-grow-1 ms-3"><h6>{{ item.get_action_display|default:item.action }}</h6><p class="text-muted mb-1">{{ item.message }}</p><small>{{ item.actor.username|default:"سیستم" }} · {{ item.created_at|date:"Y/m/d H:i" }}</small></div></div>{% empty %}<p class="text-muted">فعالیتی ثبت نشده است.</p>{% endfor %}</div></div>
+
+        <div class="tab-pane" id="project-files">{% for file in project_files %}<div class="d-flex align-items-center border rounded p-3 mb-2"><div class="avatar-sm me-3"><span class="avatar-title rounded bg-success-subtle text-success"><i class="ri-file-3-line"></i></span></div><div class="flex-grow-1"><strong>{{ file.title }}</strong><div class="small text-muted">{{ file.filename }} · {{ file.size_bytes|filesizeformat }}</div></div><a href="{% url 'control_panel:file_download' file.pk %}" class="btn btn-sm btn-soft-primary">دانلود</a></div>{% empty %}<p class="text-muted">فایلی وجود ندارد.</p>{% endfor %}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    {% if allowed_actions %}
+    <div class="card"><div class="card-header"><h5 class="card-title mb-0">اقدام مجاز پروژه</h5></div><div class="card-body">
+      {% for action in allowed_actions %}
+      <form method="post" enctype="multipart/form-data" action="{% url 'control_panel:project_workflow_action' project.pk action.key %}" class="border rounded p-3 mb-3">{% csrf_token %}
+        <div class="d-flex align-items-center gap-2 mb-2"><span class="avatar-xs"><span class="avatar-title rounded bg-{{ action.style }}-subtle text-{{ action.style }}"><i class="{{ action.icon }}"></i></span></span><strong>{{ action.label }}</strong></div>
+        {% if action.requires_editor %}<input type="number" name="editor_id" class="form-control mb-2" placeholder="شناسه پروفایل ادیتور" required>{% endif %}
+        {% if action.requires_note %}<textarea name="note" class="form-control mb-2" rows="3" placeholder="توضیحات" required></textarea>{% endif %}
+        {% if action.requires_file %}<input type="file" name="{% if action.key == 'upload_image' %}image{% else %}sample_file{% endif %}" class="form-control mb-2" required>{% endif %}
+        {% if action.key == 'direct_proposal' or action.key == 'public_proposal' %}<div class="row g-2 mb-2"><div class="col-6"><input type="number" name="proposed_price" class="form-control" placeholder="قیمت" required></div><div class="col-6"><input type="number" name="estimated_delivery_hours" class="form-control" value="24" required></div></div><textarea name="editor_note" class="form-control mb-2" placeholder="توضیح پیشنهاد"></textarea>{% endif %}
+        <button class="btn btn-{{ action.style }} w-100"><i class="{{ action.icon }} me-1"></i>{{ action.label }}</button>
+      </form>
+      {% endfor %}
+    </div></div>
+    {% endif %}
+
+    <div class="card"><div class="card-header"><h5 class="card-title mb-0">خلاصه Workspace</h5></div><div class="card-body">
+      <div class="d-flex justify-content-between mb-3"><span>پیشنهاد قابل مشاهده</span><strong>{{ project_workspace_counts.proposals }}</strong></div>
+      <div class="d-flex justify-content-between mb-3"><span>فعالیت</span><strong>{{ project_workspace_counts.activities }}</strong></div>
+      <div class="d-flex justify-content-between mb-3"><span>گفتگو</span><strong>{{ project_workspace_counts.conversations }}</strong></div>
+      {% for conversation in project_conversations %}<a href="{% url 'control_panel:conversation_detail' conversation.pk %}" class="btn btn-soft-info w-100 mb-2">{{ conversation.title }}</a>{% empty %}<a href="{% url 'control_panel:messages' %}" class="btn btn-soft-info w-100">مرکز گفتگوها</a>{% endfor %}
+    </div></div>
+
+    <div class="card"><div class="card-header"><h5 class="card-title mb-0">Deadlineها</h5></div><div class="card-body">{% for item in project_deadlines %}<div class="border rounded p-3 mb-2"><div class="d-flex justify-content-between"><strong>{{ item.stage }}</strong><span class="badge bg-{% if item.status == 'missed' %}danger{% elif item.status == 'active' %}warning{% else %}success{% endif %}-subtle text-dark">{{ item.get_status_display }}</span></div><small>{{ item.due_at|date:"Y/m/d H:i" }} · {{ item.owner_role }}</small></div>{% empty %}<p class="text-muted">Deadline ثبت نشده است.</p>{% endfor %}</div></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1 @@
+{"version":"1.0","states":["active","met","missed","cancelled"],"fields":["at","state","is_overdue","stage","owner_role","timeout_action"],"processor":{"task":"orders.tasks.check_workflow_deadlines","interval_seconds":300},"source_of_truth":"WorkflowDeadline"}

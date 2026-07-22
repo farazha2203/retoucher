@@ -1,0 +1,56 @@
+{
+  "contract_version": "1.0.0",
+  "read_model": true,
+  "progress_persisted": false,
+  "entities": {
+    "order": {
+      "summary_field": "workflow",
+      "timeline_endpoint": "/api/orders/{id}/timeline/",
+      "stages": {
+        "draft": 0,
+        "submission": 5,
+        "review": 10,
+        "assignment": 20,
+        "editing": 45,
+        "revision": 65,
+        "supervisor_qc": 70,
+        "client_review": 80,
+        "approved": 90,
+        "settlement": 95,
+        "paid": 99,
+        "closed": 100,
+        "cancelled": 100
+      }
+    },
+    "project_request": {
+      "summary_field": "workflow",
+      "timeline_endpoint": "/api/projects/requests/{id}/timeline/",
+      "stages": {
+        "draft": 0,
+        "submitted": 10,
+        "quotes": 30,
+        "samples": 30,
+        "editor_response": 30,
+        "review": 50,
+        "selection": 75,
+        "converted": 100,
+        "cancelled": 100,
+        "expired": 100
+      }
+    }
+  },
+  "deadline_states": ["none", "active", "overdue", "terminal"],
+  "event_shape": {
+    "event_id": "string",
+    "event_key": "string",
+    "entity_type": "order|project_request",
+    "entity_id": "integer",
+    "source": "status_history|activity_log",
+    "actor": {"id": "integer|null", "username": "string|null"},
+    "from_status": "string|null",
+    "to_status": "string|null",
+    "message": "string",
+    "metadata": "object",
+    "occurred_at": "ISO-8601 datetime"
+  }
+}

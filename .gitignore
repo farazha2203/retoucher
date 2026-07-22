@@ -1,0 +1,89 @@
+# ==========================================
+# Retoucher Git Ignore
+# ==========================================
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+backend/venv/
+backend/.venv/
+
+# Django local data
+backend/db.sqlite3
+backend/*.sqlite3
+backend/media/
+backend/staticfiles/
+backend/full_test_output.txt
+*.log
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+frontend/.env.local
+frontend/.env.*.local
+backend/.env
+
+# Node / Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local phase files
+frontend/_phase_backups/
+_phase_backups/
+_ai_exports/
+_project_md_export/
+backend/_ai_exports/
+backend/backend_source_snapshot.md
+
+# Archives and generated packages
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.patch
+
+# Postman local data
+.postman/
+postman/
+
+# Temporary source copies
+retoucherback/
+retoucherback
+
+# Commercial fonts
+frontend/public/fonts/iransans/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+backend/static/velzon_vendor/js/pages/leaflet-map.init.js

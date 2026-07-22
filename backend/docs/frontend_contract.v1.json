@@ -1,0 +1,53 @@
+{
+  "contract_version": "1.0.0",
+  "api_base_path": "/api",
+  "authentication": {
+    "scheme": "Bearer",
+    "token_endpoint": "/api/auth/token/",
+    "refresh_endpoint": "/api/auth/token/refresh/",
+    "authorization_header": "Authorization: Bearer <access_token>"
+  },
+  "resources": {
+    "orders": {
+      "list": "/api/orders/",
+      "detail": "/api/orders/{id}/",
+      "timeline": "/api/orders/{id}/timeline/"
+    },
+    "project_requests": {
+      "list": "/api/projects/requests/",
+      "detail": "/api/projects/requests/{id}/",
+      "timeline": "/api/projects/requests/{id}/timeline/"
+    }
+  },
+  "workflow_required_fields": [
+    "workflow_type",
+    "status",
+    "stage",
+    "progress_percent",
+    "terminal",
+    "successful",
+    "waiting_for_role",
+    "next_action",
+    "deadline"
+  ],
+  "timeline_event_required_fields": [
+    "event_id",
+    "event_key",
+    "entity_type",
+    "entity_id",
+    "source",
+    "actor",
+    "message",
+    "metadata",
+    "occurred_at"
+  ],
+  "http_status_semantics": {
+    "200": "success",
+    "400": "validation_error",
+    "401": "authentication_required_or_expired",
+    "403": "authenticated_but_forbidden",
+    "404": "resource_missing_or_hidden",
+    "409": "workflow_conflict",
+    "500": "server_error"
+  }
+}

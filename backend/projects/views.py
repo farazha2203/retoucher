@@ -1,0 +1,760 @@
+from rest_framework import decorators, permissions, response, status, viewsets
+from .models import ProjectProposal, ProjectRequest, ProjectRequestActivity
+from .workflow_presentation import build_project_timeline, get_project_workflow_summary
+from django.db import models
+from .permissions import (
+    IsProjectRequestOwnerOrStaff,
+    IsProjectRequestParticipantOrStaff,
+)
+from .serializers import (
+    ConvertProjectRequestToOrderSerializer,
+    DirectEditorDeclineSerializer,
+    DirectEditorProposalCreateSerializer,
+    ManagedAssignProjectRequestSerializer,
+    ProjectProposalSerializer,
+    ProjectRequestCreateSerializer,
+    ProjectRequestDetailSerializer,
+    ProjectRequestImageCreateSerializer,
+    ProjectRequestImageSerializer,
+    ProjectRequestListSerializer,
+    PublicProposalCreateSerializer,
+    ReviewSampleProposalSerializer,
+    SampleProposalCreateSerializer,
+    SelectProjectProposalSerializer,
+    ProjectRequestActivitySerializer,
+)
+
+
+class ProjectRequestViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsProjectRequestOwnerOrStaff]
+
+    def get_permissions(self):
+        if self.action == "retrieve":
+            return [
+                permissions.IsAuthenticated(),
+                IsProjectRequestParticipantOrStaff(),
+            ]
+
+        return super().get_permissions()
+
+    def get_editor_profile(self):
+        return getattr(self.request.user, "editor_profile", None)
+
+    def log_project_request_activity(
+        self,
+        project_request,
+        action,
+        message="",
+        metadata=None,
+    ):
+        user = self.request.user
+
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=user if user and user.is_authenticated else None,
+            action=action,
+            message=message,
+            metadata=metadata or {},
+        )
+
+    def log_activity(self, project_request, action, message="", metadata=None):
+        ProjectRequestActivity.objects.create(
+            project_request=project_request,
+            actor=self.request.user if self.request.user.is_authenticated else None,
+            action=action,
+            message=message,
+            metadata=metadata or {},
+        )
+
+    def get_queryset(self):
+        queryset = (
+            ProjectRequest.objects.select_related(
+                "client",
+                "edit_style",
+                "edit_style__category",
+                "package",
+                "target_editor",
+                "target_editor__user",
+                "converted_order",
+            )
+            .prefetch_related(
+                "images",
+                "edit_style__packages",
+                "target_editor__skills",
+                "target_editor__skills__category",
+                "target_editor__skills__packages",
+            )
+            .order_by("-created_at")
+        )
+
+        user = self.request.user
+
+        if not user.is_staff:
+            editor_profile = getattr(user, "editor_profile", None)
+
+            if editor_profile:
+                queryset = queryset.filter(
+                    models.Q(client=user)
+                    | models.Q(target_editor=editor_profile)
+                    | models.Q(
+                        request_type=ProjectRequest.RequestType.PUBLIC_QUOTE,
+                        status=ProjectRequest.Status.OPEN_FOR_QUOTES,
+                        edit_style__in=editor_profile.skills.all(),
+                    )
+                    | models.Q(
+                        request_type=ProjectRequest.RequestType.SAMPLE_CHALLENGE,
+                        status=ProjectRequest.Status.OPEN_FOR_SAMPLES,
+                        edit_style__in=editor_profile.skills.all(),
+                    )
+                )
+            else:
+                queryset = queryset.filter(client=user)
+
+        request_type = self.request.query_params.get("request_type")
+        if request_type:
+            queryset = queryset.filter(request_type=request_type)
+
+        status_value = self.request.query_params.get("status")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+
+        edit_style = self.request.query_params.get("edit_style")
+        if edit_style:
+            queryset = queryset.filter(edit_style__slug=edit_style)
+
+        return queryset
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ProjectRequestCreateSerializer
+        if self.action == "upload_image":
+            return ProjectRequestImageCreateSerializer
+        if self.action == "direct_proposal":
+            return DirectEditorProposalCreateSerializer
+        if self.action == "direct_decline":
+            return DirectEditorDeclineSerializer
+        if self.action == "retrieve":
+            return ProjectRequestDetailSerializer
+        if self.action == "public_proposal":
+            return PublicProposalCreateSerializer
+        if self.action == "select_proposal":
+            return SelectProjectProposalSerializer
+        if self.action == "sample_proposal":
+            return SampleProposalCreateSerializer
+        if self.action == "review_sample_proposal":
+            return ReviewSampleProposalSerializer
+        if self.action == "convert_to_order":
+            return ConvertProjectRequestToOrderSerializer
+        if self.action == "managed_assign":
+            return ManagedAssignProjectRequestSerializer
+        if self.action == "activity":
+            return ProjectRequestActivitySerializer
+        return ProjectRequestListSerializer
+
+    def perform_create(self, serializer):
+        project_request = serializer.save()
+
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CREATED,
+            message="Project request created.",
+            metadata={
+                "request_type": project_request.request_type,
+                "status": project_request.status,
+            },
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["get"],
+        url_path="timeline",
+        permission_classes=[
+            permissions.IsAuthenticated,
+            IsProjectRequestParticipantOrStaff,
+        ],
+    )
+    def timeline(self, request, pk=None):
+        project_request = self.get_object()
+        return response.Response(
+            {
+                "workflow": get_project_workflow_summary(project_request),
+                "events": build_project_timeline(project_request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["get"],
+        url_path="activity",
+        permission_classes=[
+            permissions.IsAuthenticated,
+            IsProjectRequestParticipantOrStaff,
+        ],
+    )
+    def activity(self, request, pk=None):
+        project_request = self.get_object()
+        activities = (
+            project_request.activities
+            .select_related("actor")
+            .order_by("-created_at", "-id")
+        )
+
+        serializer = self.get_serializer(
+            activities,
+            many=True,
+            context={"request": request},
+        )
+
+        return response.Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="images",
+        permission_classes=[permissions.IsAuthenticated, IsProjectRequestOwnerOrStaff],
+    )
+    def upload_image(self, request, pk=None):
+        project_request = self.get_object()
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        image = serializer.save()
+        self.log_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.IMAGE_UPLOADED,
+            message="Project request image uploaded.",
+            metadata={"image_id": image.id},
+        )
+
+        output_serializer = ProjectRequestImageSerializer(
+            image,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="direct-proposal",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def direct_proposal(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can respond to direct requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_PROPOSAL_SUBMITTED,
+            message="Direct proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+                "proposed_price": str(proposal.proposed_price),
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="direct-decline",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def direct_decline(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can decline direct requests."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.DIRECT_DECLINED,
+            message="Direct project request declined by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="public-proposal",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def public_proposal(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can submit public proposals."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PUBLIC_PROPOSAL_SUBMITTED,
+            message="Public proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+                "proposed_price": str(proposal.proposed_price),
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path=r"proposals/(?P<proposal_id>[^/.]+)/select",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def select_proposal(self, request, pk=None, proposal_id=None):
+        project_request = self.get_object()
+
+        try:
+            proposal = project_request.proposals.get(id=proposal_id)
+        except Exception:
+            return response.Response(
+                {"detail": "Proposal not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "proposal": proposal,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        selected_proposal = serializer.save()
+
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.PROPOSAL_SELECTED,
+            message="Project proposal selected by client.",
+            metadata={
+                "proposal_id": selected_proposal.id,
+                "editor_id": selected_proposal.editor_id,
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            selected_proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="sample-proposal",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def sample_proposal(self, request, pk=None):
+        project_request = self.get_object()
+        editor_profile = self.get_editor_profile()
+
+        if editor_profile is None:
+            return response.Response(
+                {"detail": "Only editors can submit sample proposals."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "editor_profile": editor_profile,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_PROPOSAL_SUBMITTED,
+            message="Sample proposal submitted by editor.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path=r"proposals/(?P<proposal_id>[^/.]+)/review-sample",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def review_sample_proposal(self, request, pk=None, proposal_id=None):
+        project_request = self.get_object()
+
+        try:
+            proposal = project_request.proposals.get(id=proposal_id)
+        except Exception:
+            return response.Response(
+                {"detail": "Proposal not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+                "proposal": proposal,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        reviewed_proposal = serializer.save()
+
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.SAMPLE_REVIEWED,
+            message="Sample proposal reviewed by staff.",
+            metadata={
+                "proposal_id": reviewed_proposal.id,
+                "status": reviewed_proposal.status,
+                "supervisor_score": reviewed_proposal.supervisor_score,
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            reviewed_proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="convert-to-order",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def convert_to_order(self, request, pk=None):
+        project_request = self.get_object()
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.CONVERTED_TO_ORDER,
+            message="Project request converted to order.",
+            metadata={
+                "order_id": order.id,
+            },
+        )
+
+        return response.Response(
+            {
+                "id": order.id,
+                "order_id": order.id,
+                "project_request_id": project_request.id,
+                "status": order.status,
+                "title": order.title,
+                "client": order.client_id,
+                "editor": order.editor_id,
+                "deadline": order.deadline,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["get"],
+        url_path="activities",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def activities(self, request, pk=None):
+        project_request = self.get_object()
+
+        activities = project_request.activities.select_related("actor").order_by(
+            "-created_at",
+            "-id",
+        )
+
+        data = [
+            {
+                "id": activity.id,
+                "actor": activity.actor_id,
+                "actor_username": activity.actor.username if activity.actor else None,
+                "action": activity.action,
+                "message": activity.message,
+                "metadata": activity.metadata,
+                "created_at": activity.created_at,
+            }
+            for activity in activities
+        ]
+
+        return response.Response(data, status=status.HTTP_200_OK)
+
+    @decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="dashboard-summary",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def dashboard_summary(self, request):
+        project_requests = ProjectRequest.objects.all()
+        proposals = ProjectProposal.objects.all()
+        activities = ProjectRequestActivity.objects.all()
+
+        requests_by_status = {
+            item["status"]: item["count"]
+            for item in project_requests.values("status")
+            .annotate(count=models.Count("id"))
+            .order_by("status")
+        }
+
+        requests_by_type = {
+            item["request_type"]: item["count"]
+            for item in project_requests.values("request_type")
+            .annotate(count=models.Count("id"))
+            .order_by("request_type")
+        }
+
+        proposals_by_status = {
+            item["status"]: item["count"]
+            for item in proposals.values("status")
+            .annotate(count=models.Count("id"))
+            .order_by("status")
+        }
+
+        activities_by_action = {
+            item["action"]: item["count"]
+            for item in activities.values("action")
+            .annotate(count=models.Count("id"))
+            .order_by("action")
+        }
+
+        latest_requests = [
+            {
+                "id": item.id,
+                "title": item.title,
+                "request_type": item.request_type,
+                "status": item.status,
+                "client": item.client_id,
+                "edit_style": item.edit_style_id,
+                "created_at": item.created_at,
+            }
+            for item in project_requests.select_related(
+                "client", "edit_style"
+            ).order_by("-created_at", "-id")[:10]
+        ]
+
+        return response.Response(
+            {
+                "total_requests": project_requests.count(),
+                "total_proposals": proposals.count(),
+                "requests_by_status": requests_by_status,
+                "requests_by_type": requests_by_type,
+                "proposals_by_status": proposals_by_status,
+                "latest_requests": latest_requests,
+                "total_activities": activities.count(),
+                "activities_by_action": activities_by_action,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["post"],
+        url_path="managed-assign",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def managed_assign(self, request, pk=None):
+        project_request = self.get_object()
+
+        serializer = self.get_serializer(
+            data=request.data,
+            context={
+                "request": request,
+                "project_request": project_request,
+            },
+        )
+        serializer.is_valid(raise_exception=True)
+        proposal = serializer.save()
+        self.log_project_request_activity(
+            project_request=project_request,
+            action=ProjectRequestActivity.Action.MANAGED_ASSIGNED,
+            message="Project request managed assignment completed.",
+            metadata={
+                "proposal_id": proposal.id,
+                "editor_id": proposal.editor_id,
+            },
+        )
+
+        output_serializer = ProjectProposalSerializer(
+            proposal,
+            context={"request": request},
+        )
+
+        return response.Response(
+            output_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    @decorators.action(
+        detail=False,
+        methods=["get"],
+        url_path="latest-activities",
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def latest_activities(self, request):
+        limit = request.query_params.get("limit", 20)
+        action = request.query_params.get("action")
+        project_request_id = request.query_params.get("project_request")
+        actor_id = request.query_params.get("actor")
+
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = 20
+
+        limit = max(1, min(limit, 100))
+
+        activities = ProjectRequestActivity.objects.select_related(
+            "project_request",
+            "actor",
+        ).order_by("-created_at", "-id")
+
+        if action:
+            activities = activities.filter(action=action)
+
+        if project_request_id:
+            activities = activities.filter(project_request_id=project_request_id)
+
+        if actor_id:
+            activities = activities.filter(actor_id=actor_id)
+
+        activities = activities[:limit]
+
+        data = [
+            {
+                "id": activity.id,
+                "project_request": activity.project_request_id,
+                "project_request_title": activity.project_request.title,
+                "actor": activity.actor_id,
+                "actor_username": activity.actor.username if activity.actor else None,
+                "action": activity.action,
+                "message": activity.message,
+                "metadata": activity.metadata,
+                "created_at": activity.created_at,
+            }
+            for activity in activities
+        ]
+
+        return response.Response(
+            data,
+            status=status.HTTP_200_OK,
+        )

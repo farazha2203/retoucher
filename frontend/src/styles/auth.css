@@ -1,0 +1,85 @@
+:root {
+  --rt-rose: #F2A8C4;
+  --rt-rose-deep: #E07AA0;
+  --rt-rose-light: #FDF0F6;
+  --rt-lavender: #C4B5F4;
+  --rt-lavender-deep: #9B85E8;
+  --rt-lavender-light: #F3F0FE;
+  --rt-sage: #A8D5C2;
+  --rt-sage-deep: #6DB89A;
+  --rt-sage-light: #EEF8F4;
+  --rt-peach: #F4C4A8;
+  --rt-peach-deep: #E89B6D;
+  --rt-peach-light: #FEF5F0;
+  --rt-sky: #A8C4F4;
+  --rt-sky-deep: #6D9BE8;
+  --rt-sky-light: #F0F5FE;
+}
+
+.auth-gradient-bg {
+  background: linear-gradient(145deg, #FDF0F6 0%, #F3F0FE 40%, #EEF8F4 100%);
+}
+
+.auth-card {
+  background: white;
+  border-radius: 20px;
+  border: 1px solid #EBEBF0;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+.btn-auth-primary {
+  background: linear-gradient(135deg, var(--rt-lavender) 0%, var(--rt-rose) 100%);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-auth-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(196, 181, 244, 0.4);
+}
+
+.input-auth {
+  border: 1.5px solid #EBEBF0;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.input-auth:focus {
+  border-color: var(--rt-lavender);
+  background: var(--rt-lavender-light);
+  box-shadow: 0 0 0 3px rgba(196, 181, 244, 0.15);
+}
+
+.otp-input {
+  border: 1.5px solid #EBEBF0;
+  transition: all 0.2s;
+}
+
+.otp-input:focus {
+  border-color: var(--rt-lavender);
+  background: var(--rt-lavender-light);
+  box-shadow: 0 0 0 3px rgba(196, 181, 244, 0.15);
+}
+
+.otp-input.filled {
+  border-color: var(--rt-lavender);
+  background: var(--rt-lavender-light);
+  color: var(--rt-lavender-deep);
+}
+
+.role-card {
+  border: 1.5px solid #EBEBF0;
+  transition: all 0.2s;
+}
+
+.role-card:hover {
+  border-color: var(--rt-lavender);
+  background: var(--rt-lavender-light);
+}
+
+.role-card.selected {
+  border-color: var(--rt-lavender-deep);
+  background: var(--rt-lavender-light);
+}
+
+.strength-bar-fill {
+  transition: width 0.4s, background 0.4s;
+}

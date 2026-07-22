@@ -1,0 +1,124 @@
+{% load static %}
+<div class="app-menu navbar-menu">
+  <div class="navbar-brand-box">
+    <a href="{% url 'control_panel:dashboard' %}" class="logo logo-dark">
+      <span class="logo-sm"><span class="logo-mark">R</span></span>
+      <span class="logo-lg"><span class="logo-title">ریتاچر</span></span>
+    </a>
+    <a href="{% url 'control_panel:dashboard' %}" class="logo logo-light">
+      <span class="logo-sm"><span class="logo-mark">R</span></span>
+      <span class="logo-lg"><span class="logo-title text-white">ریتاچر</span></span>
+    </a>
+  </div>
+
+  <div id="scrollbar">
+    <div class="container-fluid">
+      <ul class="navbar-nav" id="navbar-nav">
+        <li class="menu-title"><span>داشبورد</span></li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:dashboard' %}">
+            <i class="ri-dashboard-2-line"></i><span>نمای کلی</span>
+          </a>
+        </li>
+
+        <li class="menu-title"><span>عملیات من</span></li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:orders' %}">
+            <i class="ri-shopping-bag-3-line"></i>
+            <span>{% if panel_is_client %}سفارش‌های من{% elif panel_is_editor %}کارهای من{% else %}سفارش‌ها{% endif %}</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:projects' %}">
+            <i class="ri-folder-3-line"></i>
+            <span>{% if panel_is_client %}درخواست‌های من{% elif panel_is_editor %}فرصت‌ها و پروژه‌ها{% else %}پروژه‌ها و پیشنهادها{% endif %}</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:messages' %}">
+            <i class="ri-chat-3-line"></i><span>چت و پیام‌ها</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:files' %}">
+            <i class="ri-folder-upload-line"></i><span>فایل‌های من</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:notifications' %}">
+            <i class="ri-notification-3-line"></i><span>اعلان‌ها</span>
+          </a>
+        </li>
+
+        {% if panel_can_view_finance %}
+        <li class="menu-title"><span>مالی</span></li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:finance' %}">
+            <i class="ri-wallet-3-line"></i>
+            <span>{% if panel_can_manage_finance %}مدیریت مالی{% else %}کیف پول و پرداخت‌های من{% endif %}</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if panel_is_management %}
+        <li class="menu-title"><span>نظارت و مدیریت</span></li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:deadlines' %}">
+            <i class="ri-timer-flash-line"></i><span>SLA و Deadline</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if panel_can_manage_users %}
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:users' %}">
+            <i class="ri-user-settings-line"></i><span>کاربران و ادیتورها</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if panel_can_view_audit %}
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:audit' %}">
+            <i class="ri-file-list-3-line"></i><span>لاگ و گزارش</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if panel_can_view_backend %}
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:backend_modules' %}">
+            <i class="ri-apps-2-line"></i><span>همه امکانات Backend</span>
+          </a>
+        </li>
+        {% endif %}
+
+        <li class="menu-title"><span>حساب</span></li>
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="{% url 'control_panel:settings' %}">
+            <i class="ri-settings-3-line"></i><span>تنظیمات</span>
+          </a>
+        </li>
+
+        {% if panel_can_access_system_admin %}
+        <li class="nav-item">
+          <a class="nav-link menu-link" href="/system-admin/">
+            <i class="ri-tools-line"></i><span>Django Admin فنی</span>
+          </a>
+        </li>
+        {% endif %}
+
+        <li class="nav-item">
+          <form method="post" action="{% url 'control_panel:logout' %}">
+            {% csrf_token %}
+            <button class="nav-link menu-link border-0 bg-transparent w-100 text-start">
+              <i class="ri-logout-box-r-line"></i><span>خروج</span>
+            </button>
+          </form>
+        </li>
+      </ul>
+    </div>
+  </div>
+  <div class="sidebar-background"></div>
+</div>
+<div class="vertical-overlay"></div>

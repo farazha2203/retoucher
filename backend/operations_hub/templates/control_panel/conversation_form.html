@@ -1,0 +1,14 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-xl-8"><div class="card">
+<div class="card-header"><h4 class="card-title mb-0">ایجاد گفتگوی جدید</h4></div>
+<div class="card-body"><form method="post">{% csrf_token %}
+<div class="row g-3">
+<div class="col-md-8"><label class="form-label">عنوان</label>{{ form.title }}</div>
+<div class="col-md-4"><label class="form-label">نوع</label>{{ form.kind }}</div>
+<div class="col-md-6"><label class="form-label">سفارش مرتبط</label>{{ form.order }}</div>
+<div class="col-md-6"><label class="form-label">پروژه مرتبط</label>{{ form.project_request }}</div>
+<div class="col-12"><label class="form-label">اعضا</label><select name="participant_ids" class="form-select" multiple>{% for user in users %}<option value="{{ user.pk }}">{{ user.username }} — {{ user.get_role_display }}</option>{% endfor %}</select></div>
+<div class="col-12"><button class="btn btn-primary" type="submit">ایجاد گفتگو</button></div>
+</div></form></div></div></div></div>
+{% endblock %}

@@ -1,0 +1,320 @@
+from django.db.models import Count, Q
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+
+from .models import Notification
+from .serializers import NotificationSerializer
+
+
+class NotificationViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = NotificationSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def parse_datetime_filter(self, value, field_name):
+        parsed_value = parse_datetime(value)
+
+        if parsed_value is None:
+            raise ValidationError(
+                {
+                    field_name: "Must be a valid ISO 8601 datetime.",
+                }
+            )
+
+        if timezone.is_naive(parsed_value):
+            parsed_value = timezone.make_aware(
+                parsed_value,
+                timezone.get_current_timezone(),
+            )
+
+        return parsed_value
+
+    def get_queryset(self):
+        queryset = (
+            Notification.objects.filter(recipient=self.request.user)
+            .select_related("recipient", "actor")
+            .order_by("-created_at", "-id")
+        )
+
+        is_read = self.request.query_params.get("is_read")
+        notification_type = self.request.query_params.get("notification_type")
+        priority = self.request.query_params.get("priority")
+        search = self.request.query_params.get("search")
+        created_after = self.request.query_params.get("created_after")
+        created_before = self.request.query_params.get("created_before")
+
+        if is_read is not None:
+            normalized_is_read = is_read.lower()
+
+            if normalized_is_read in ("true", "1", "yes"):
+                queryset = queryset.filter(is_read=True)
+            elif normalized_is_read in ("false", "0", "no"):
+                queryset = queryset.filter(is_read=False)
+
+        if notification_type:
+            queryset = queryset.filter(notification_type=notification_type)
+
+        if priority:
+            queryset = queryset.filter(priority=priority)
+
+        if search:
+            queryset = queryset.filter(Q(title__icontains=search))
+
+        if created_after:
+            queryset = queryset.filter(
+                created_at__gte=self.parse_datetime_filter(
+                    created_after,
+                    "created_after",
+                )
+            )
+
+        if created_before:
+            queryset = queryset.filter(
+                created_at__lte=self.parse_datetime_filter(
+                    created_before,
+                    "created_before",
+                )
+            )
+
+        return queryset
+
+    @action(detail=False, methods=["post"], url_path="mark-selected-read")
+    def mark_selected_read(self, request):
+        notification_ids = request.data.get("ids", [])
+
+        if not isinstance(notification_ids, list):
+            return Response(
+                {
+                    "detail": "ids must be a list.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated_count = Notification.objects.filter(
+            recipient=request.user,
+            id__in=notification_ids,
+        ).update(
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        return Response(
+            {
+                "updated_count": updated_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="recent")
+    def recent(self, request):
+        raw_limit = request.query_params.get("limit", 5)
+
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return Response(
+                {
+                    "detail": "limit must be a positive integer.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if limit < 1:
+            return Response(
+                {
+                    "detail": "limit must be a positive integer.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        limit = min(limit, 20)
+
+        queryset = self.get_queryset()[:limit]
+        serializer = self.get_serializer(queryset, many=True)
+
+        return Response(
+            {
+                "count": len(serializer.data),
+                "results": serializer.data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="choices")
+    def choices(self, request):
+        return Response(
+            {
+                "types": [
+                    {
+                        "value": value,
+                        "label": str(label),
+                    }
+                    for value, label in Notification.Type.choices
+                ],
+                "priorities": [
+                    {
+                        "value": value,
+                        "label": str(label),
+                    }
+                    for value, label in Notification.Priority.choices
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="delete-selected")
+    def delete_selected(self, request):
+        notification_ids = request.data.get("ids", [])
+
+        if not isinstance(notification_ids, list):
+            return Response(
+                {
+                    "detail": "ids must be a list.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        deleted_count, _ = Notification.objects.filter(
+            recipient=request.user,
+            id__in=notification_ids,
+        ).delete()
+
+        return Response(
+            {
+                "deleted_count": deleted_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["post"], url_path="mark-selected-unread")
+    def mark_selected_unread(self, request):
+        notification_ids = request.data.get("ids", [])
+
+        if not isinstance(notification_ids, list):
+            return Response(
+                {
+                    "detail": "ids must be a list.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated_count = Notification.objects.filter(
+            recipient=request.user,
+            id__in=notification_ids,
+        ).update(
+            is_read=False,
+            read_at=None,
+        )
+
+        return Response(
+            {
+                "updated_count": updated_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="mark-unread")
+    def mark_unread(self, request, pk=None):
+        notification = self.get_object()
+
+        notification.is_read = False
+        notification.read_at = None
+        notification.save(update_fields=["is_read", "read_at"])
+
+        serializer = self.get_serializer(notification)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["delete"], url_path="clear-read")
+    def clear_read(self, request):
+        deleted_count, _ = Notification.objects.filter(
+            recipient=request.user,
+            is_read=True,
+        ).delete()
+
+        return Response(
+            {
+                "deleted_count": deleted_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        queryset = Notification.objects.filter(recipient=request.user)
+
+        total_count = queryset.count()
+        unread_count = queryset.filter(is_read=False).count()
+        read_count = total_count - unread_count
+        high_priority_unread_count = queryset.filter(
+            is_read=False,
+            priority=Notification.Priority.HIGH,
+        ).count()
+
+        by_type = {choice_value: 0 for choice_value, _ in Notification.Type.choices}
+
+        for row in queryset.values("notification_type").annotate(count=Count("id")):
+            by_type[row["notification_type"]] = row["count"]
+
+        by_priority = {
+            choice_value: 0 for choice_value, _ in Notification.Priority.choices
+        }
+
+        for row in queryset.values("priority").annotate(count=Count("id")):
+            by_priority[row["priority"]] = row["count"]
+
+        return Response(
+            {
+                "total_count": total_count,
+                "unread_count": unread_count,
+                "read_count": read_count,
+                "high_priority_unread_count": high_priority_unread_count,
+                "by_type": by_type,
+                "by_priority": by_priority,
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="unread-count")
+    def unread_count(self, request):
+        count = self.get_queryset().filter(is_read=False).count()
+        return Response({"unread_count": count}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="mark-read")
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        notification.mark_as_read()
+
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="mark-unread")
+    def mark_unread(self, request, pk=None):
+        notification = self.get_object()
+        notification.mark_as_unread()
+
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="mark-all-read")
+    def mark_all_read(self, request):
+        unread_notifications = self.get_queryset().filter(is_read=False)
+        updated_count = unread_notifications.count()
+
+        unread_notifications.update(
+            is_read=True,
+            read_at=timezone.now(),
+        )
+
+        return Response(
+            {"updated_count": updated_count},
+            status=status.HTTP_200_OK,
+        )

@@ -1,0 +1,42 @@
+{% extends "control_panel/base.html" %}
+{% load humanize %}
+{% block content %}
+<div class="row mb-3"><div class="col"><h4 class="mb-1">داشبورد مدیریتی ریتاچر</h4><p class="text-muted mb-0">نمای شماتیک عملکرد، درآمد، Workflow و SLA</p></div></div>
+
+<div class="row">
+{% include "control_panel/partials/kpi.html" with title="کل سفارش‌ها" value=order_total icon="ri-shopping-bag-3-line" color="primary" %}
+{% include "control_panel/partials/kpi.html" with title="سفارش فعال" value=order_active icon="ri-loader-4-line" color="warning" %}
+{% include "control_panel/partials/kpi.html" with title="درصد تکمیل" value=completion_percent suffix="٪" icon="ri-checkbox-circle-line" color="success" %}
+{% include "control_panel/partials/kpi.html" with title="SLA معوق" value=overdue_count icon="ri-timer-flash-line" color="danger" %}
+{% include "control_panel/partials/kpi.html" with title="حجم مالی موفق" value=successful_volume|intcomma suffix=" تومان" icon="ri-money-dollar-circle-line" color="success" %}
+{% include "control_panel/partials/kpi.html" with title="موجودی کیف پول‌ها" value=wallet_balance|intcomma suffix=" تومان" icon="ri-wallet-3-line" color="info" %}
+{% include "control_panel/partials/kpi.html" with title="گفتگوها" value=conversation_total icon="ri-chat-3-line" color="primary" %}
+{% include "control_panel/partials/kpi.html" with title="فایل‌ها" value=file_total icon="ri-folder-upload-line" color="secondary" %}
+</div>
+
+<div class="row">
+<div class="col-xl-8"><div class="card"><div class="card-header"><h4 class="card-title mb-0">روند سفارش و پروژه</h4></div><div class="card-body"><div id="trendChart" style="height:340px"></div></div></div></div>
+<div class="col-xl-4"><div class="card"><div class="card-header"><h4 class="card-title mb-0">توزیع وضعیت سفارش‌ها</h4></div><div class="card-body"><div id="statusChart" style="height:340px"></div></div></div></div>
+</div>
+
+<div class="row">
+<div class="col-xl-4"><div class="card"><div class="card-header"><h4 class="card-title mb-0">ترکیب نقش کاربران</h4></div><div class="card-body"><div id="roleChart" style="height:300px"></div></div></div></div>
+<div class="col-xl-8"><div class="card"><div class="card-header d-flex justify-content-between"><h4 class="card-title mb-0">آخرین سفارش‌ها</h4><a href="{% url 'control_panel:orders' %}" class="btn btn-sm btn-soft-primary">همه سفارش‌ها</a></div><div class="card-body"><div class="table-responsive"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>#</th><th>عنوان</th><th>مشتری</th><th>ادیتور</th><th>وضعیت</th><th>مبلغ</th></tr></thead><tbody>{% for row in recent_orders %}<tr><td><a href="{% url 'control_panel:order_detail' row.pk %}">#{{ row.pk }}</a></td><td>{{ row.title|truncatechars:34 }}</td><td>{{ row.client.username }}</td><td>{{ row.editor.username|default:"—" }}</td><td><span class="badge bg-primary-subtle text-primary">{{ row.get_status_display }}</span></td><td>{{ row.agreed_price|intcomma }}</td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted">داده‌ای نیست</td></tr>{% endfor %}</tbody></table></div></div></div></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="/static/velzon_vendor/libs/apexcharts/apexcharts.min.js"></script>
+{{ order_status_labels|json_script:"order-status-labels" }}
+{{ order_status_values|json_script:"order-status-values" }}
+{{ role_labels|json_script:"role-labels" }}
+{{ role_values|json_script:"role-values" }}
+{{ order_month_labels|json_script:"order-month-labels" }}
+{{ order_month_values|json_script:"order-month-values" }}
+{{ project_month_values|json_script:"project-month-values" }}
+<script>
+const j=id=>JSON.parse(document.getElementById(id).textContent);
+new ApexCharts(document.querySelector("#statusChart"),{chart:{type:"donut"},series:j("order-status-values"),labels:j("order-status-labels"),legend:{position:"bottom"},dataLabels:{enabled:true}}).render();
+new ApexCharts(document.querySelector("#roleChart"),{chart:{type:"radialBar"},series:j("role-values"),labels:j("role-labels"),plotOptions:{radialBar:{dataLabels:{total:{show:true,label:"کاربران"}}}},legend:{show:true,position:"bottom"}}).render();
+new ApexCharts(document.querySelector("#trendChart"),{chart:{type:"area",toolbar:{show:false}},series:[{name:"سفارش",data:j("order-month-values")},{name:"پروژه",data:j("project-month-values")}],xaxis:{categories:j("order-month-labels")},stroke:{curve:"smooth"},dataLabels:{enabled:false},fill:{type:"gradient"}}).render();
+</script>
+{% endblock %}

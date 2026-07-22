@@ -1,0 +1,19 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-xl-6">
+    <div class="card text-center">
+      <div class="card-body py-5">
+        <div class="avatar-xl mx-auto mb-4">
+          <span class="avatar-title rounded-circle bg-danger-subtle text-danger display-5">
+            <i class="ri-lock-2-line"></i>
+          </span>
+        </div>
+        <h3>دسترسی مجاز نیست</h3>
+        <p class="text-muted">این بخش برای نقش کاربری شما فعال نیست یا این رکورد متعلق به حساب شما نیست.</p>
+        <a href="{% url 'control_panel:dashboard' %}" class="btn btn-primary">بازگشت به داشبورد</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

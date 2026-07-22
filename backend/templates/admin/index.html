@@ -1,0 +1,204 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static admin_dashboard_stats %}
+{% block bodyclass %}
+{{ block.super }} dashboard retoucher-admin-dashboard{%endblock %}
+{% block breadcrumbs %}{% endblock %} 
+{% block content %}
+<div class="retoucher-dashboard">
+  <section class="dashboard-hero">
+    <div>
+      <h1>Retoucher Control Panel</h1>
+      <p>
+        Manage orders, public portfolio, payments, users, notifications and
+        platform operations from one clean administration dashboard.
+      </p>
+    </div>
+    <div class="dashboard-hero-badge">Admin Dashboard</div>
+  </section>
+  {% retoucher_admin_stats as stats %}
+
+  <section class="dashboard-metrics-grid">
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">📦</div>
+      <div>
+        <div class="dashboard-metric-value">{{ stats.orders_count }}</div>
+        <div class="dashboard-metric-label">Total Orders</div>
+      </div>
+    </div>
+
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">🕓</div>
+      <div>
+        <div class="dashboard-metric-value">
+          {{ stats.public_pending_deliveries_count }}
+        </div>
+        <div class="dashboard-metric-label">Pending Public Deliveries</div>
+      </div>
+    </div>
+
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">🌐</div>
+      <div>
+        <div class="dashboard-metric-value">
+          {{ stats.payment_requests_count }}
+        </div>
+        <div class="dashboard-metric-label">Payment Requests</div>
+      </div>
+    </div>
+
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">🏦</div>
+      <div>
+        <div class="dashboard-metric-value">
+          {{ stats.pending_withdrawals_count }}
+        </div>
+        <div class="dashboard-metric-label">Pending Withdrawals</div>
+      </div>
+    </div>
+
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">💳</div>
+      <div>
+        <div class="dashboard-metric-value">{{ stats.transactions_count }}</div>
+        <div class="dashboard-metric-label">Transactions</div>
+      </div>
+    </div>
+
+    <div class="dashboard-metric-card">
+      <div class="dashboard-metric-icon">👥</div>
+      <div>
+        <div class="dashboard-metric-value">{{ stats.users_count }}</div>
+        <div class="dashboard-metric-label">Users</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <a class="dashboard-card" href="{% url 'admin:orders_order_changelist' %}">
+      <div class="dashboard-card-icon">📦</div>
+      <div>
+        <h3>Orders</h3>
+        <p>Track orders, clients, editors, deadlines and order status.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:orders_orderdelivery_changelist' %}"
+    >
+      <div class="dashboard-card-icon">🖼️</div>
+      <div>
+        <h3>Portfolio</h3>
+        <p>Review public deliveries and portfolio publication workflow.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:orders_ordercomment_changelist' %}"
+    >
+      <div class="dashboard-card-icon">💬</div>
+      <div>
+        <h3>Comments</h3>
+        <p>Moderate comments, replies, feedback and public discussions.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:orders_orderrating_changelist' %}"
+    >
+      <div class="dashboard-card-icon">⭐</div>
+      <div>
+        <h3>Ratings</h3>
+        <p>Inspect editor scores, client feedback and order review quality.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:payments_transaction_changelist' %}"
+    >
+      <div class="dashboard-card-icon">💳</div>
+      <div>
+        <h3>Transactions</h3>
+        <p>Monitor wallet movements, payment records and financial activity.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:payments_withdrawrequest_changelist' %}"
+    >
+      <div class="dashboard-card-icon">🏦</div>
+      <div>
+        <h3>Withdrawals</h3>
+        <p>Manage editor withdrawal requests, payout status and settlements.</p>
+      </div>
+    </a>
+
+    <a class="dashboard-card" href="{% url 'admin:accounts_user_changelist' %}">
+      <div class="dashboard-card-icon">👥</div>
+      <div>
+        <h3>Users</h3>
+        <p>Manage clients, editors, staff users, roles and account access.</p>
+      </div>
+    </a>
+
+    <a
+      class="dashboard-card"
+      href="{% url 'admin:notifications_notification_changelist' %}"
+    >
+      <div class="dashboard-card-icon">🔔</div>
+      <div>
+        <h3>Notifications</h3>
+        <p>Review platform notifications and user communication logs.</p>
+      </div>
+    </a>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="dashboard-section-header">
+      <div>
+        <h2>Application Modules</h2>
+        <p>
+          Manage all registered Django admin modules from a unified custom
+          layout.
+        </p>
+      </div>
+    </div>
+
+    {% if app_list %}
+    <div class="dashboard-app-list">
+      {% for app in app_list %}
+      <div class="dashboard-app app-{{ app.app_label }}">
+        <h3>{{ app.name }}</h3>
+
+        <ul>
+          {% for model in app.models %}
+          <li>
+            {% if model.admin_url %}
+            <a href="{{ model.admin_url }}">{{ model.name }}</a>
+            {% else %}
+            <span>{{ model.name }}</span>
+            {% endif %}
+
+            <div class="dashboard-model-actions">
+              {% if model.add_url %}
+              <a href="{{ model.add_url }}">Add</a>
+              {% endif %} {% if model.admin_url %}
+              <a href="{{ model.admin_url }}">View</a>
+              {% endif %}
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p>{% translate "You don't have permission to view or edit anything." %}</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,283 @@
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
+
+
+from accounts.models import EditorProfile
+from catalog.models import EditPackage, EditStyle
+
+
+class ProjectRequest(models.Model):
+    class RequestType(models.TextChoices):
+        DIRECT_EDITOR = "direct_editor", "Direct editor"
+        PUBLIC_QUOTE = "public_quote", "Public quote"
+        SAMPLE_CHALLENGE = "sample_challenge", "Sample challenge"
+        MANAGED_ORDER = "managed_order", "Managed order"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted"
+        OPEN_FOR_QUOTES = "open_for_quotes", "Open for quotes"
+        OPEN_FOR_SAMPLES = "open_for_samples", "Open for samples"
+        WAITING_FOR_EDITOR = "waiting_for_editor", "Waiting for editor"
+        UNDER_REVIEW = "under_review", "Under review"
+        EDITOR_SELECTED = "editor_selected", "Editor selected"
+        CONVERTED_TO_ORDER = "converted_to_order", "Converted to order"
+        CANCELLED = "cancelled", "Cancelled"
+        EXPIRED = "expired", "Expired"
+
+    client = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="project_requests",
+    )
+
+    request_type = models.CharField(
+        max_length=30,
+        choices=RequestType.choices,
+        default=RequestType.MANAGED_ORDER,
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=Status.choices,
+        default=Status.DRAFT,
+    )
+
+    title = models.CharField(max_length=180)
+    description = models.TextField(blank=True)
+
+    edit_style = models.ForeignKey(
+        EditStyle,
+        on_delete=models.PROTECT,
+        related_name="project_requests",
+    )
+    package = models.ForeignKey(
+        EditPackage,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_requests",
+    )
+
+    target_editor = models.ForeignKey(
+        EditorProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="targeted_project_requests",
+        help_text="Used for direct editor requests.",
+    )
+
+    budget_min = models.PositiveIntegerField(default=0)
+    budget_max = models.PositiveIntegerField(default=0)
+    preferred_deadline = models.DateTimeField(null=True, blank=True)
+
+    image_count = models.PositiveIntegerField(default=0)
+
+    client_note = models.TextField(blank=True)
+    support_note = models.TextField(blank=True)
+
+    converted_order = models.OneToOneField(
+        "orders.Order",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_project_request",
+    )
+
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Automatically calculated based on request type and submission date.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        verbose_name = "Project request"
+        verbose_name_plural = "Project requests"
+
+    def save(self, *args, **kwargs):
+        """Override save to calculate expiration date."""
+        from .expiration_handler import ProjectExpirationHandler
+        
+        if hasattr(self, 'status'):
+            if self.status == ProjectRequest.Status.SUBMITTED and self.submitted_at and not self.expires_at:
+                expiration_date = ProjectExpirationHandler.get_expiration_date(self)
+                if expiration_date:
+                    self.expires_at = expiration_date
+        
+        super().save(*args, **kwargs)
+
+    def is_expired(self):
+        """Check if request is past expiration."""
+        if not self.expires_at:
+            return False
+        return timezone.now() > self.expires_at
+
+    def get_time_remaining(self):
+        """Get remaining time until expiration in hours."""
+        if not self.expires_at:
+            return None
+        remaining = (self.expires_at - timezone.now()).total_seconds() / 3600
+        return max(0, int(remaining))
+
+    def __str__(self):
+        return f"{self.title} - {self.client}"
+
+
+class ProjectRequestImage(models.Model):
+    project_request = models.ForeignKey(
+        ProjectRequest,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to="project_requests/originals/")
+    caption = models.CharField(max_length=180, blank=True)
+    is_sample_image = models.BooleanField(
+        default=False,
+        help_text="Used for sample challenge requests.",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+
+
+    class Meta:
+        ordering = ["sort_order", "uploaded_at"]
+        verbose_name = "Project request image"
+        verbose_name_plural = "Project request images"
+
+
+
+    def __str__(self):
+        return f"Image for {self.project_request_id}"
+    
+class ProjectProposal(models.Model):
+    class Status(models.TextChoices):
+        SUBMITTED = "submitted", "Submitted"
+        UNDER_REVIEW = "under_review", "Under review"
+        APPROVED = "approved", "Approved"
+        REJECTED_BY_SUPERVISOR = "rejected_by_supervisor", "Rejected by supervisor"
+        ACCEPTED_BY_CLIENT = "accepted_by_client", "Accepted by client"
+        DECLINED_BY_EDITOR = "declined_by_editor", "Declined by editor"
+        REJECTED_BY_CLIENT = "rejected_by_client", "Rejected by client"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    project_request = models.ForeignKey(
+        ProjectRequest,
+        on_delete=models.CASCADE,
+        related_name="proposals",
+    )
+    editor = models.ForeignKey(
+        EditorProfile,
+        on_delete=models.CASCADE,
+        related_name="project_proposals",
+    )
+
+    status = models.CharField(
+        max_length=30,
+        choices=Status.choices,
+        default=Status.SUBMITTED,
+    )
+
+    proposed_price = models.PositiveIntegerField(default=0)
+    editor_fee = models.PositiveIntegerField(
+        default=0,
+        help_text="Internal editor fee or requested wage.",
+    )
+    estimated_delivery_hours = models.PositiveIntegerField(default=24)
+
+    editor_note = models.TextField(blank=True)
+    sample_file = models.FileField(
+        upload_to="project_proposals/samples/",
+        blank=True,
+        null=True,
+    )
+    sample_note = models.TextField(blank=True)
+
+    supervisor_score = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="Score from 1 to 10.",
+    )
+    supervisor_note = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_project_proposals",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    is_visible_to_client = models.BooleanField(default=True)
+    
+    client_note = models.TextField(blank=True)
+
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project_request", "editor"],
+                name="unique_project_proposal_per_editor",
+            )
+        ]
+        verbose_name = "Project proposal"
+        verbose_name_plural = "Project proposals"
+
+    def __str__(self):
+        return f"{self.project_request_id} - {self.editor}"
+    
+class ProjectRequestActivity(models.Model):
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        IMAGE_UPLOADED = "image_uploaded", "Image uploaded"
+        DIRECT_PROPOSAL_SUBMITTED = "direct_proposal_submitted", "Direct proposal submitted"
+        DIRECT_DECLINED = "direct_declined", "Direct declined"
+        PUBLIC_PROPOSAL_SUBMITTED = "public_proposal_submitted", "Public proposal submitted"
+        SAMPLE_PROPOSAL_SUBMITTED = "sample_proposal_submitted", "Sample proposal submitted"
+        SAMPLE_REVIEWED = "sample_reviewed", "Sample reviewed"
+        PROPOSAL_SELECTED = "proposal_selected", "Proposal selected"
+        CONVERTED_TO_ORDER = "converted_to_order", "Converted to order"
+        MANAGED_ASSIGNED = "managed_assigned", "Managed assigned"
+        EXPIRED = "expired", "Request expired"
+        PROPOSAL_AUTO_REJECTED = "proposal_auto_rejected", "Proposal auto-rejected"
+
+    project_request = models.ForeignKey(
+        ProjectRequest,
+        on_delete=models.CASCADE,
+        related_name="activities",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_request_activities",
+    )
+    action = models.CharField(
+        max_length=80,
+        choices=Action.choices,
+    )
+    message = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["project_request", "-created_at"]),
+            models.Index(fields=["action"]),
+        ]
+
+    def __str__(self):
+        return f"{self.project_request_id} - {self.action}"

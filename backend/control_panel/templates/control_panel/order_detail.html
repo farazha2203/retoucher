@@ -1,0 +1,194 @@
+{% extends "control_panel/base.html" %}
+{% load humanize %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center gap-3">
+      <div class="avatar-md">
+        <span class="avatar-title rounded bg-primary-subtle text-primary fs-2">
+          <i class="ri-shopping-bag-3-line"></i>
+        </span>
+      </div>
+      <div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <h4 class="mb-0">{{ order.title }}</h4>
+          <span class="badge bg-primary-subtle text-primary">{{ order.get_status_display }}</span>
+          {% if order.escrow_held %}<span class="badge bg-warning-subtle text-warning">وجه در امانت</span>{% endif %}
+          {% if order.payment_settled %}<span class="badge bg-success-subtle text-success">تسویه‌شده</span>{% endif %}
+        </div>
+        <p class="text-muted mb-0 mt-1">سفارش #{{ order.pk }} · آخرین تغییر {{ order.updated_at|date:"Y/m/d H:i" }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4 mt-3 mt-lg-0 text-lg-end">
+    {% if is_order_staff %}
+    <a href="{{ system_admin_url }}" class="btn btn-soft-secondary">
+      <i class="ri-tools-line me-1"></i>ویرایش فنی
+    </a>
+    {% endif %}
+    <a href="{% url 'control_panel:orders' %}" class="btn btn-soft-primary">
+      <i class="ri-arrow-right-line me-1"></i>بازگشت
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div>
+        <strong>پیشرفت واقعی Workflow</strong>
+        <div class="text-muted small">
+          {% if allowed_actions %}مرحله جاری دارای {{ allowed_actions|length }} عملیات مجاز است.{% else %}در انتظار اقدام نقش بعدی یا پایان روند.{% endif %}
+        </div>
+      </div>
+      <span class="badge bg-primary fs-14">{{ progress_percent }}٪</span>
+    </div>
+    <div class="progress progress-lg" style="height:16px">
+      <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:{{ progress_percent }}%"></div>
+    </div>
+    <div class="row text-center mt-3 g-2">
+      <div class="col"><small class="text-muted">ثبت</small></div>
+      <div class="col"><small class="text-muted">بررسی</small></div>
+      <div class="col"><small class="text-muted">تخصیص</small></div>
+      <div class="col"><small class="text-muted">اجرا</small></div>
+      <div class="col"><small class="text-muted">تحویل</small></div>
+      <div class="col"><small class="text-muted">بازبینی</small></div>
+      <div class="col"><small class="text-muted">تسویه</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header border-0 pb-0">
+        <ul class="nav nav-tabs nav-tabs-custom card-header-tabs" role="tablist">
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#overview"><i class="ri-dashboard-line me-1"></i>نمای کلی</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#files"><i class="ri-folder-image-line me-1"></i>فایل‌ها <span class="badge bg-light text-dark">{{ workspace_counts.files|add:workspace_counts.images }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#deliveries"><i class="ri-upload-cloud-line me-1"></i>تحویل‌ها <span class="badge bg-light text-dark">{{ workspace_counts.deliveries }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#revisions"><i class="ri-restart-line me-1"></i>اصلاحات <span class="badge bg-light text-dark">{{ workspace_counts.revisions }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#comments"><i class="ri-chat-check-line me-1"></i>کامنت‌ها <span class="badge bg-light text-dark">{{ workspace_counts.comments }}</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#timeline"><i class="ri-time-line me-1"></i>Timeline</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#finance"><i class="ri-wallet-3-line me-1"></i>مالی</a></li>
+        </ul>
+      </div>
+      <div class="card-body">
+        <div class="tab-content">
+          <div class="tab-pane active" id="overview">
+            <div class="row g-3">
+              <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">مشتری</small><h6 class="mt-1">{{ order.client.get_full_name|default:order.client.username }}</h6><div class="small text-muted">{{ order.client.email }}</div></div></div>
+              <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">ادیتور</small><h6 class="mt-1">{{ order.editor.get_full_name|default:order.editor.username|default:"تخصیص‌نیافته" }}</h6></div></div>
+              <div class="col-md-4"><div class="border rounded p-3 h-100"><small class="text-muted">مهلت نهایی</small><h6 class="mt-1">{{ order.deadline|date:"Y/m/d H:i"|default:"تعیین نشده" }}</h6></div></div>
+              <div class="col-12"><div class="border rounded p-3"><small class="text-muted">شرح سفارش</small><p class="mb-0 mt-2">{{ order.description|linebreaksbr|default:"توضیحی ثبت نشده است." }}</p></div></div>
+            </div>
+            <div class="row mt-3 g-3">
+              <div class="col-md-3"><div class="card bg-primary-subtle border-0 mb-0"><div class="card-body"><small>مبلغ توافق</small><h5 class="mt-2 mb-0">{{ order.agreed_price|intcomma }} تومان</h5></div></div></div>
+              <div class="col-md-3"><div class="card bg-info-subtle border-0 mb-0"><div class="card-body"><small>کمیسیون</small><h5 class="mt-2 mb-0">{{ order.commission_amount|intcomma }}</h5></div></div></div>
+              <div class="col-md-3"><div class="card bg-success-subtle border-0 mb-0"><div class="card-body"><small>درآمد ادیتور</small><h5 class="mt-2 mb-0">{{ order.editor_earning|intcomma }}</h5></div></div></div>
+              <div class="col-md-3"><div class="card bg-warning-subtle border-0 mb-0"><div class="card-body"><small>دفعات اصلاح</small><h5 class="mt-2 mb-0">{{ order.revision_count }}</h5></div></div></div>
+            </div>
+          </div>
+
+          <div class="tab-pane" id="files">
+            <h5 class="mb-3">تصاویر ورودی</h5>
+            <div class="row g-3">
+              {% for image in images %}
+              <div class="col-md-4"><div class="border rounded overflow-hidden"><a href="{{ image.image.url }}" target="_blank"><img src="{{ image.image.url }}" class="img-fluid w-100" style="height:180px;object-fit:cover"></a><div class="p-2 small">{{ image.note|default:"بدون توضیح" }}<div class="text-muted mt-1">{{ image.uploaded_at|date:"Y/m/d H:i" }}</div></div></div></div>
+              {% empty %}<div class="col-12 text-center text-muted py-4">تصویر ورودی ثبت نشده است.</div>{% endfor %}
+            </div>
+            <hr>
+            <h5 class="mb-3">فایل‌های مدیریت‌شده</h5>
+            {% for file in managed_files %}
+            <div class="d-flex align-items-center border rounded p-3 mb-2"><div class="avatar-sm me-3"><span class="avatar-title rounded bg-primary-subtle text-primary"><i class="ri-file-3-line"></i></span></div><div class="flex-grow-1"><strong>{{ file.title }}</strong><div class="small text-muted">{{ file.filename }} · {{ file.size_bytes|filesizeformat }}</div></div><a href="{% url 'control_panel:file_download' file.pk %}" class="btn btn-sm btn-soft-primary">دانلود</a></div>
+            {% empty %}<p class="text-muted">فایل مدیریت‌شده‌ای وجود ندارد.</p>{% endfor %}
+          </div>
+
+          <div class="tab-pane" id="deliveries">
+            {% for delivery in deliveries %}
+            <div class="border rounded p-3 mb-3">
+              <div class="d-flex justify-content-between align-items-start">
+                <div><h6><i class="ri-file-download-line text-success me-1"></i>تحویل #{{ delivery.pk }}</h6><p class="mb-1">{{ delivery.note|default:"بدون توضیح" }}</p><small class="text-muted">{{ delivery.uploaded_by.username|default:"سیستم" }} · {{ delivery.uploaded_at|date:"Y/m/d H:i" }}</small></div>
+                <div class="text-end"><span class="badge bg-{% if delivery.publication_status == 'approved' %}success{% elif delivery.publication_status == 'rejected' %}danger{% elif delivery.publication_status == 'requested' %}warning{% else %}secondary{% endif %}-subtle text-dark">{{ delivery.get_publication_status_display }}</span><div class="mt-2"><a href="{{ delivery.file.url }}" class="btn btn-sm btn-success" target="_blank">دریافت فایل</a></div></div>
+              </div>
+            </div>
+            {% empty %}<div class="text-center text-muted py-4">هنوز خروجی تحویل نشده است.</div>{% endfor %}
+          </div>
+
+          <div class="tab-pane" id="revisions">
+            {% for revision in revisions %}
+            <div class="border-start border-4 border-warning rounded p-3 mb-3 bg-light-subtle"><div class="d-flex justify-content-between"><strong>{{ revision.get_source_display }}</strong><small class="text-muted">{{ revision.created_at|date:"Y/m/d H:i" }}</small></div><p class="mb-1 mt-2">{{ revision.note }}</p><small>{{ revision.requested_by.username|default:"سیستم" }}</small></div>
+            {% empty %}<div class="text-center text-muted py-4">درخواست اصلاحی وجود ندارد.</div>{% endfor %}
+          </div>
+
+          <div class="tab-pane" id="comments">
+            {% for comment in comments %}
+            <div class="border rounded p-3 mb-3">
+              <div class="d-flex justify-content-between"><strong>{{ comment.sender.username|default:"کاربر" }}</strong><span class="badge bg-{% if comment.resolved_at %}success{% else %}warning{% endif %}-subtle text-dark">{% if comment.resolved_at %}حل‌شده{% else %}باز{% endif %}</span></div>
+              <p class="mb-1 mt-2">{{ comment.text|default:"کامنت نقطه‌ای" }}</p>
+              {% if comment.x is not None %}<small class="text-muted">مختصات: {{ comment.x }}٪ × {{ comment.y }}٪</small>{% endif %}
+              <div class="small text-muted mt-1">{{ comment.created_at|date:"Y/m/d H:i" }}</div>
+              {% for reply in comment.replies.all %}<div class="ms-4 mt-2 p-2 bg-light rounded"><strong>{{ reply.sender.username }}</strong>: {{ reply.text }}</div>{% endfor %}
+            </div>
+            {% empty %}<div class="text-center text-muted py-4">کامنتی ثبت نشده است.</div>{% endfor %}
+          </div>
+
+          <div class="tab-pane" id="timeline">
+            <div class="acitivity-timeline">
+              {% for log in activities %}
+              <div class="acitivity-item d-flex mb-4"><div class="flex-shrink-0 avatar-xs acitivity-avatar"><div class="avatar-title bg-primary-subtle text-primary rounded-circle"><i class="ri-flashlight-line"></i></div></div><div class="flex-grow-1 ms-3"><h6 class="mb-1">{{ log.get_activity_type_display|default:log.activity_type }}</h6><p class="text-muted mb-1">{{ log.message }}</p><small>{{ log.created_at|date:"Y/m/d H:i:s" }} · {{ log.actor.username|default:"سیستم" }}</small></div></div>
+              {% empty %}<p class="text-muted">فعالیتی ثبت نشده است.</p>{% endfor %}
+            </div>
+          </div>
+
+          <div class="tab-pane" id="finance">
+            <div class="table-responsive"><table class="table align-middle"><thead class="table-light"><tr><th>نوع</th><th>مبلغ</th><th>وضعیت</th><th>مرجع</th><th>زمان</th></tr></thead><tbody>
+              {% for tx in transactions %}<tr><td>{{ tx.get_tx_type_display }}</td><td>{{ tx.amount|intcomma }}</td><td>{{ tx.get_status_display }}</td><td>{{ tx.reference|default:"—" }}</td><td>{{ tx.created_at|date:"Y/m/d H:i" }}</td></tr>
+              {% empty %}<tr><td colspan="5" class="text-center text-muted">تراکنشی ثبت نشده است.</td></tr>{% endfor %}
+            </tbody></table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    {% if allowed_actions %}
+    <div class="card">
+      <div class="card-header"><h5 class="card-title mb-0">اقدام بعدی مجاز</h5></div>
+      <div class="card-body">
+        {% for action in allowed_actions %}
+        <form method="post" enctype="multipart/form-data" action="{% url 'control_panel:order_workflow_action' order.pk action.key %}" class="border rounded p-3 mb-3">
+          {% csrf_token %}
+          <div class="d-flex align-items-center gap-2 mb-2"><span class="avatar-xs"><span class="avatar-title rounded bg-{{ action.style }}-subtle text-{{ action.style }}"><i class="{{ action.icon }}"></i></span></span><div><strong>{{ action.label }}</strong><div class="small text-muted">تأییدشده توسط قرارداد Backend</div></div></div>
+          {% if action.requires_editor %}<select name="editor_id" class="form-select mb-2" required><option value="">انتخاب ادیتور</option>{% for editor in editors %}<option value="{{ editor.pk }}">{{ editor.editor_profile.display_name|default:editor.username }} · امتیاز {{ editor.editor_profile.rating_average }}</option>{% endfor %}</select>{% endif %}
+          {% if action.requires_note %}<textarea name="note" class="form-control mb-2" rows="3" placeholder="توضیحات لازم" required></textarea>{% endif %}
+          {% if action.requires_rating %}<div class="row g-2 mb-2"><div class="col-4"><input type="number" name="score" min="1" max="10" value="10" class="form-control" required></div><div class="col-8"><input type="text" name="comment" class="form-control" placeholder="نظر ناظر"></div></div>{% endif %}
+          {% if action.requires_file %}<input type="file" name="{% if action.key == 'upload_image' %}image{% else %}file{% endif %}" class="form-control mb-2" required>{% endif %}
+          <button class="btn btn-{{ action.style }} w-100" {% if action.confirm %}onclick="return confirm('{{ action.confirm }}')"{% endif %}><i class="{{ action.icon }} me-1"></i>{{ action.label }}</button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header"><h5 class="card-title mb-0">کنترل وضعیت</h5></div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-3"><span>کامنت باز</span><strong class="{% if unresolved_comments %}text-danger{% endif %}">{{ unresolved_comments }}</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>Deadline فعال</span><strong class="{% if active_deadlines %}text-warning{% endif %}">{{ active_deadlines }}</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>گفتگو</span><strong>{{ workspace_counts.conversations }}</strong></div>
+        {% for conversation in conversations %}<a href="{% url 'control_panel:conversation_detail' conversation.pk %}" class="btn btn-soft-info w-100 mb-2"><i class="ri-chat-3-line me-1"></i>{{ conversation.title }}</a>{% empty %}<a href="{% url 'control_panel:messages' %}" class="btn btn-soft-info w-100">مرکز گفتگوها</a>{% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h5 class="card-title mb-0">Deadlineها</h5></div>
+      <div class="card-body">
+        {% for item in deadlines %}
+        <div class="border rounded p-3 mb-2"><div class="d-flex justify-content-between"><strong>{{ item.stage }}</strong><span class="badge bg-{% if item.status == 'missed' %}danger{% elif item.status == 'active' %}warning{% else %}success{% endif %}-subtle text-dark">{{ item.get_status_display }}</span></div><small class="text-muted">{{ item.due_at|date:"Y/m/d H:i" }} · {{ item.owner_role }}</small></div>
+        {% empty %}<p class="text-muted mb-0">Deadline فعالی وجود ندارد.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
