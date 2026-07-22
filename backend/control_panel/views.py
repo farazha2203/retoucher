@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.apps import apps
 from django.contrib import admin, messages
-from django.contrib.auth import views as auth_views
+from django.contrib.auth import get_user_model, views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Sum, Q
@@ -12,6 +12,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+
+from .forms import (
+    AdminUserCreateForm,
+    AdminUserUpdateForm,
+    EditorProfileAdminForm,
+)
+
 
 from .access import (
     can_view_order,
@@ -34,6 +41,7 @@ from .action_bridge import (
     invoke_project_action,
 )
 from .contracts import order_actions, project_actions
+from .dashboard_engine import build_dashboard_context
 
 
 def _is_management(user):
@@ -166,96 +174,7 @@ def _monthly_series(model, date_field, months=8):
 
 @login_required
 def dashboard(request):
-    Order = _safe_model("orders.Order")
-    Project = _safe_model("projects.ProjectRequest")
-    User = _safe_model("accounts.User")
-    Wallet = _safe_model("payments.Wallet")
-    Transaction = _safe_model("payments.Transaction")
-    Withdraw = _safe_model("payments.WithdrawRequest")
-    WorkflowDeadline = _safe_model("orders.WorkflowDeadline")
-    Conversation = _safe_model("operations_hub.Conversation")
-    ManagedFile = _safe_model("operations_hub.ManagedFile")
-    Audit = _safe_model("operations_hub.SystemAuditLog")
-
-    order_qs = visible_orders(request.user, Order.objects.all()) if Order else None
-    project_qs = visible_projects(request.user, Project.objects.all()) if Project else None
-    wallet_qs = visible_wallets(request.user, Wallet.objects.all()) if Wallet else None
-    transaction_qs = (
-        visible_transactions(request.user, Transaction.objects.all())
-        if Transaction else None
-    )
-
-    order_total = order_qs.count() if order_qs is not None else 0
-    completed = order_qs.filter(status__in=["completed", "paid", "closed"]).count() if order_qs is not None else 0
-    active = order_qs.exclude(status__in=["draft", "cancelled", "completed", "paid", "closed"]).count() if order_qs is not None else 0
-    overdue = 0
-    if WorkflowDeadline and is_order_staff(request.user):
-        overdue = WorkflowDeadline.objects.filter(
-            status="active",
-            due_at__lt=timezone.now(),
-        ).count()
-
-    order_statuses = []
-    if Order:
-        order_statuses = list(
-            order_qs.values("status")
-            .annotate(total=Count("id"))
-            .order_by("-total")
-        )
-
-    role_stats = []
-    if User and is_order_staff(request.user):
-        role_stats = list(
-            User.objects.values("role")
-            .annotate(total=Count("id"))
-            .order_by("-total")
-        )
-
-    order_month_labels, order_month_values = _monthly_series(Order, "created_at")
-    project_month_labels, project_month_values = _monthly_series(Project, "created_at")
-
-    context = {
-         "page_title": (
-            "داشبورد مدیریتی ریتاچر"
-            if is_order_staff(request.user)
-            else ("داشبورد ادیتور" if getattr(request.user, "role", "") == "editor" else "داشبورد مشتری")
-        ),
-        "order_total": order_total,
-        "order_active": active,
-        "order_completed": completed,
-        "completion_percent": round((completed / order_total) * 100, 1) if order_total else 0,
-        "overdue_count": overdue,
-        "project_total": project_qs.count() if project_qs is not None else 0,
-        "user_total": User.objects.count() if (User and is_order_staff(request.user)) else 0,
-        "editor_total": User.objects.filter(role="editor").count() if (User and is_order_staff(request.user)) else 0,
-        "transaction_total": transaction_qs.count() if transaction_qs is not None else 0,
-        "successful_volume": (transaction_qs.filter(status="success").aggregate(total=Sum("amount"))["total"] or Decimal("0")) if transaction_qs is not None else Decimal("0"),
-        "wallet_balance": (wallet_qs.aggregate(total=Sum("balance"))["total"] or Decimal("0")) if wallet_qs is not None else Decimal("0"),
-        "frozen_balance": (wallet_qs.aggregate(total=Sum("frozen_balance"))["total"] or Decimal("0")) if wallet_qs is not None else Decimal("0"),
-        "withdraw_pending": Withdraw.objects.filter(status="pending").count() if Withdraw else 0,
-        "conversation_total": Conversation.objects.count() if Conversation else 0,
-        "file_total": ManagedFile.objects.filter(deleted_at__isnull=True).count() if ManagedFile else 0,
-        "audit_today": Audit.objects.filter(created_at__date=timezone.localdate()).count() if (Audit and is_order_staff(request.user)) else 0,
-        "order_status_labels": [row["status"] for row in order_statuses],
-        "order_status_values": [row["total"] for row in order_statuses],
-        "role_labels": [row["role"] or "unknown" for row in role_stats],
-        "role_values": [row["total"] for row in role_stats],
-        "order_month_labels": order_month_labels,
-        "order_month_values": order_month_values,
-        "project_month_labels": project_month_labels,
-        "project_month_values": project_month_values,
-        "recent_orders": _attach_order_progress(list(
-            order_qs.select_related("client", "editor").order_by("-created_at")[:8]
-        )) if Order else [],
-        "recent_transactions": (
-            transaction_qs.select_related("wallet__user", "order").order_by("-created_at")[:8]
-            if Transaction else []
-        ),
-        "recent_audits": (
-            Audit.objects.select_related("actor").order_by("-created_at")[:8]
-            if Audit else []
-        ),
-    }
+    context = build_dashboard_context(request.user)
     return render(request, "control_panel/dashboard.html", context)
 
 
@@ -532,10 +451,238 @@ def project_workflow_action(request, pk, action_key):
 
 @login_required
 def users_list(request):
-    _require_management(request.user)
-    User = _safe_model("accounts.User")
-    rows = User.objects.order_by("-date_joined")[:300] if User else []
-    return render(request, "control_panel/users.html", {"page_title": "کاربران", "rows": rows})
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    User = get_user_model()
+    query = request.GET.get("q", "").strip()
+    role = request.GET.get("role", "").strip()
+    state = request.GET.get("state", "").strip()
+
+    rows = User.objects.select_related("editor_profile").order_by(
+        "-is_active",
+        "-date_joined",
+        "-id",
+    )
+
+    if query:
+        rows = rows.filter(
+            Q(username__icontains=query)
+            | Q(email__icontains=query)
+            | Q(first_name__icontains=query)
+            | Q(last_name__icontains=query)
+            | Q(phone_number__icontains=query)
+        )
+    if role:
+        rows = rows.filter(role=role)
+    if state == "active":
+        rows = rows.filter(is_active=True)
+    elif state == "inactive":
+        rows = rows.filter(is_active=False)
+    elif state == "verified":
+        rows = rows.filter(is_verified=True)
+
+    role_stats = list(
+        User.objects.values("role")
+        .annotate(total=Count("id"))
+        .order_by("role")
+    )
+
+    return render(
+        request,
+        "control_panel/users.html",
+        {
+            "page_title": "کاربران و ادیتورها",
+            "rows": rows[:500],
+            "query": query,
+            "selected_role": role,
+            "selected_state": state,
+            "role_choices": User.Role.choices,
+            "role_stats": role_stats,
+            "active_count": User.objects.filter(is_active=True).count(),
+            "inactive_count": User.objects.filter(is_active=False).count(),
+            "verified_count": User.objects.filter(is_verified=True).count(),
+            "editor_count": User.objects.filter(role=User.Role.EDITOR).count(),
+        },
+    )
+
+
+@login_required
+def user_create(request):
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    form = AdminUserCreateForm(
+        request.POST or None,
+        actor=request.user,
+    )
+    editor_form = EditorProfileAdminForm(
+        request.POST or None,
+        prefix="editor",
+    )
+
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+
+        if user.role == user.Role.EDITOR:
+            profile, _ = user.editor_profile.__class__.objects.get_or_create(
+                user=user,
+                defaults={"display_name": user.get_full_name() or user.username},
+            ) if hasattr(user, "editor_profile") else (None, False)
+
+            if profile is None:
+                from accounts.models import EditorProfile
+                profile = EditorProfile.objects.create(
+                    user=user,
+                    display_name=user.get_full_name() or user.username,
+                )
+
+            if editor_form.is_valid():
+                for field, value in editor_form.cleaned_data.items():
+                    if field == "skills":
+                        continue
+                    setattr(profile, field, value)
+                profile.save()
+                profile.skills.set(editor_form.cleaned_data.get("skills", []))
+
+        messages.success(request, "کاربر جدید با موفقیت ایجاد شد.")
+        return redirect("control_panel:user_edit", pk=user.pk)
+
+    return render(
+        request,
+        "control_panel/user_form.html",
+        {
+            "page_title": "ایجاد کاربر جدید",
+            "form": form,
+            "editor_form": editor_form,
+            "creating": True,
+        },
+    )
+
+
+@login_required
+def user_edit(request, pk):
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    User = get_user_model()
+    user_obj = get_object_or_404(User, pk=pk)
+
+    if user_obj.is_superuser and not request.user.is_superuser:
+        raise PermissionDenied
+
+    form = AdminUserUpdateForm(
+        request.POST or None,
+        instance=user_obj,
+        actor=request.user,
+    )
+
+    from accounts.models import EditorProfile
+    profile = EditorProfile.objects.filter(user=user_obj).first()
+    editor_form = EditorProfileAdminForm(
+        request.POST or None,
+        instance=profile,
+        prefix="editor",
+    )
+
+    if request.method == "POST" and form.is_valid():
+        updated = form.save()
+
+        if updated.role == updated.Role.EDITOR:
+            profile, _ = EditorProfile.objects.get_or_create(
+                user=updated,
+                defaults={
+                    "display_name": updated.get_full_name() or updated.username,
+                },
+            )
+            editor_form = EditorProfileAdminForm(
+                request.POST,
+                instance=profile,
+                prefix="editor",
+            )
+            if editor_form.is_valid():
+                editor_form.save()
+        elif profile is not None:
+            profile.is_available = False
+            profile.save(update_fields=["is_available", "updated_at"])
+
+        messages.success(request, "اطلاعات کاربر ذخیره شد.")
+        return redirect("control_panel:user_edit", pk=updated.pk)
+
+    return render(
+        request,
+        "control_panel/user_form.html",
+        {
+            "page_title": f"ویرایش {user_obj.username}",
+            "form": form,
+            "editor_form": editor_form,
+            "user_obj": user_obj,
+            "profile": profile,
+            "creating": False,
+        },
+    )
+
+
+@login_required
+@require_POST
+def user_toggle_active(request, pk):
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    User = get_user_model()
+    user_obj = get_object_or_404(User, pk=pk)
+
+    if user_obj.pk == request.user.pk:
+        messages.error(request, "نمی‌توانید حساب فعال خودتان را غیرفعال کنید.")
+        return redirect("control_panel:user_edit", pk=pk)
+
+    if user_obj.is_superuser and not request.user.is_superuser:
+        raise PermissionDenied
+
+    user_obj.is_active = not user_obj.is_active
+    user_obj.save(update_fields=["is_active", "updated_at"])
+
+    messages.success(
+        request,
+        "حساب کاربر فعال شد." if user_obj.is_active
+        else "حساب کاربر غیرفعال شد.",
+    )
+    return redirect(request.POST.get("next") or "control_panel:users")
+
+
+@login_required
+@require_POST
+def user_toggle_verified(request, pk):
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    User = get_user_model()
+    user_obj = get_object_or_404(User, pk=pk)
+    user_obj.is_verified = not user_obj.is_verified
+    user_obj.save(update_fields=["is_verified", "updated_at"])
+
+    messages.success(
+        request,
+        "کاربر تأیید شد." if user_obj.is_verified
+        else "تأیید کاربر برداشته شد.",
+    )
+    return redirect(request.POST.get("next") or "control_panel:users")
+
 
 
 @login_required
@@ -650,12 +797,98 @@ def backend_modules(request):
 
 @login_required
 def settings_home(request):
+    if not (
+        request.user.is_superuser
+        or getattr(request.user, "role", "") == "admin"
+    ):
+        raise PermissionDenied
+
+    groups = defaultdict(list)
+    total_models = 0
+    total_records = 0
+
+    app_labels = {
+        "auth": "احراز هویت و گروه‌ها",
+        "accounts": "کاربران و ادیتورها",
+        "catalog": "کاتالوگ خدمات",
+        "orders": "سفارش‌ها و Workflow",
+        "projects": "پروژه‌ها و پیشنهادها",
+        "payments": "مالی و تسویه",
+        "notifications": "اعلان‌ها",
+        "operations_hub": "چت، فایل و لاگ",
+        "sb_admin_audit": "لاگ پنل قدیمی",
+    }
+
+    dedicated_models = {
+        "accounts.user",
+        "accounts.editorprofile",
+        "orders.order",
+        "projects.projectrequest",
+        "payments.wallet",
+        "payments.transaction",
+        "notifications.notification",
+        "operations_hub.conversation",
+        "operations_hub.managedfile",
+        "operations_hub.systemauditlog",
+    }
+
+    for model, model_admin in admin.site._registry.items():
+        opts = model._meta
+        key = f"{opts.app_label}.{opts.model_name}"
+
+        try:
+            count = model.objects.count()
+        except Exception:
+            count = 0
+
+        total_models += 1
+        total_records += count
+
+        try:
+            list_url = reverse(
+                f"admin:{opts.app_label}_{opts.model_name}_changelist"
+            )
+        except Exception:
+            list_url = ""
+
+        add_url = ""
+        try:
+            if model_admin.has_add_permission(request):
+                add_url = reverse(
+                    f"admin:{opts.app_label}_{opts.model_name}_add"
+                )
+        except Exception:
+            add_url = ""
+
+        groups[opts.app_label].append({
+            "label": str(opts.verbose_name_plural),
+            "model_name": opts.model_name,
+            "count": count,
+            "list_url": list_url,
+            "add_url": add_url,
+            "has_dedicated_page": key in dedicated_models,
+        })
+
+    modules = [
+        {
+            "app": app,
+            "label": app_labels.get(app, app.replace("_", " ").title()),
+            "models": sorted(items, key=lambda item: item["label"]),
+            "count": sum(item["count"] for item in items),
+        }
+        for app, items in sorted(groups.items())
+    ]
+
     return render(
         request,
-        "control_panel/placeholder.html",
+        "control_panel/settings.html",
         {
-            "page_title": "تنظیمات",
-            "section_title": "تنظیمات سامانه",
-            "section_description": "تنظیمات عمومی، امنیت، نقش‌ها و Workflow از مرکز Backend قابل مدیریت است.",
+            "page_title": "تنظیمات و امکانات مدیریتی",
+            "modules": modules,
+            "total_models": total_models,
+            "total_records": total_records,
+            "dedicated_count": len(dedicated_models),
+            "legacy_count": max(total_models - len(dedicated_models), 0),
         },
     )
+

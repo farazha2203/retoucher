@@ -1,42 +1,172 @@
 {% extends "control_panel/base.html" %}
 {% load humanize %}
 {% block content %}
-<div class="row mb-3"><div class="col"><h4 class="mb-1">داشبورد مدیریتی ریتاچر</h4><p class="text-muted mb-0">نمای شماتیک عملکرد، درآمد، Workflow و SLA</p></div></div>
-
-<div class="row">
-{% include "control_panel/partials/kpi.html" with title="کل سفارش‌ها" value=order_total icon="ri-shopping-bag-3-line" color="primary" %}
-{% include "control_panel/partials/kpi.html" with title="سفارش فعال" value=order_active icon="ri-loader-4-line" color="warning" %}
-{% include "control_panel/partials/kpi.html" with title="درصد تکمیل" value=completion_percent suffix="٪" icon="ri-checkbox-circle-line" color="success" %}
-{% include "control_panel/partials/kpi.html" with title="SLA معوق" value=overdue_count icon="ri-timer-flash-line" color="danger" %}
-{% include "control_panel/partials/kpi.html" with title="حجم مالی موفق" value=successful_volume|intcomma suffix=" تومان" icon="ri-money-dollar-circle-line" color="success" %}
-{% include "control_panel/partials/kpi.html" with title="موجودی کیف پول‌ها" value=wallet_balance|intcomma suffix=" تومان" icon="ri-wallet-3-line" color="info" %}
-{% include "control_panel/partials/kpi.html" with title="گفتگوها" value=conversation_total icon="ri-chat-3-line" color="primary" %}
-{% include "control_panel/partials/kpi.html" with title="فایل‌ها" value=file_total icon="ri-folder-upload-line" color="secondary" %}
+<div class="card bg-primary text-white overflow-hidden">
+  <div class="card-body position-relative">
+    <div class="row align-items-center">
+      <div class="col-lg-8">
+        <span class="badge bg-white bg-opacity-10 text-white mb-3">{{ panel_role_label }}</span>
+        <h3 class="text-white">{{ hero_title }}</h3>
+        <p class="text-white-50 mb-0">{{ hero_subtitle }}</p>
+      </div>
+      <div class="col-lg-4 mt-4 mt-lg-0">
+        <div class="row g-2 text-center">
+          <div class="col-4"><div class="bg-white bg-opacity-10 rounded p-3"><h4 class="text-white mb-1">{{ active_orders_count }}</h4><small>فعال</small></div></div>
+          <div class="col-4"><div class="bg-white bg-opacity-10 rounded p-3"><h4 class="text-white mb-1">{{ completion_percent }}٪</h4><small>تکمیل</small></div></div>
+          <div class="col-4"><div class="bg-white bg-opacity-10 rounded p-3"><h4 class="text-white mb-1">{{ unread_notifications }}</h4><small>اعلان</small></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="row">
-<div class="col-xl-8"><div class="card"><div class="card-header"><h4 class="card-title mb-0">روند سفارش و پروژه</h4></div><div class="card-body"><div id="trendChart" style="height:340px"></div></div></div></div>
-<div class="col-xl-4"><div class="card"><div class="card-header"><h4 class="card-title mb-0">توزیع وضعیت سفارش‌ها</h4></div><div class="card-body"><div id="statusChart" style="height:340px"></div></div></div></div>
+  {% for item in primary_kpis %}
+  <div class="col-xl-3 col-md-6">
+    <a href="{% url item.url_name %}" class="text-decoration-none">
+      <div class="card card-animate">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <div class="flex-grow-1"><p class="text-uppercase fw-medium text-muted mb-0">{{ item.title }}</p></div>
+            <div class="avatar-sm"><span class="avatar-title rounded bg-{{ item.color }}-subtle text-{{ item.color }} fs-3"><i class="{{ item.icon }}"></i></span></div>
+          </div>
+          <h4 class="mt-4 mb-0 text-body">{% if item.is_money %}{{ item.value|intcomma }}{% else %}{{ item.value }}{% endif %}{{ item.suffix|default:"" }}</h4>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
 </div>
 
 <div class="row">
-<div class="col-xl-4"><div class="card"><div class="card-header"><h4 class="card-title mb-0">ترکیب نقش کاربران</h4></div><div class="card-body"><div id="roleChart" style="height:300px"></div></div></div></div>
-<div class="col-xl-8"><div class="card"><div class="card-header d-flex justify-content-between"><h4 class="card-title mb-0">آخرین سفارش‌ها</h4><a href="{% url 'control_panel:orders' %}" class="btn btn-sm btn-soft-primary">همه سفارش‌ها</a></div><div class="card-body"><div class="table-responsive"><table class="table table-hover align-middle"><thead class="table-light"><tr><th>#</th><th>عنوان</th><th>مشتری</th><th>ادیتور</th><th>وضعیت</th><th>مبلغ</th></tr></thead><tbody>{% for row in recent_orders %}<tr><td><a href="{% url 'control_panel:order_detail' row.pk %}">#{{ row.pk }}</a></td><td>{{ row.title|truncatechars:34 }}</td><td>{{ row.client.username }}</td><td>{{ row.editor.username|default:"—" }}</td><td><span class="badge bg-primary-subtle text-primary">{{ row.get_status_display }}</span></td><td>{{ row.agreed_price|intcomma }}</td></tr>{% empty %}<tr><td colspan="6" class="text-center text-muted">داده‌ای نیست</td></tr>{% endfor %}</tbody></table></div></div></div></div>
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <div class="flex-grow-1"><h4 class="card-title mb-0">روند سفارش‌های قابل مشاهده</h4></div>
+        <a href="{% url 'control_panel:orders' %}" class="btn btn-sm btn-soft-primary">مشاهده سفارش‌ها</a>
+      </div>
+      <div class="card-body"><div id="orderTrendChart" style="height:320px"></div></div>
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card">
+      <div class="card-header"><h4 class="card-title mb-0">توزیع وضعیت</h4></div>
+      <div class="card-body"><div id="orderStatusChart" style="height:320px"></div></div>
+    </div>
+  </div>
 </div>
+
+<div class="row">
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <h4 class="card-title mb-0 flex-grow-1">آخرین سفارش‌ها</h4>
+        <span class="badge bg-primary-subtle text-primary">{{ total_orders }} سفارش</span>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-light"><tr><th>#</th><th>عنوان</th><th>وضعیت</th><th>ادیتور</th><th>ددلاین</th><th></th></tr></thead>
+            <tbody>
+              {% for order in recent_orders %}
+              <tr>
+                <td>#{{ order.pk }}</td>
+                <td><strong>{{ order.title|truncatechars:38 }}</strong><div class="small text-muted">{{ order.updated_at|date:"Y/m/d H:i" }}</div></td>
+                <td><span class="badge bg-primary-subtle text-primary">{{ order.get_status_display }}</span></td>
+                <td>{% if order.editor %}
+                  {{ order.editor.get_full_name|default:order.editor.username }}
+                {% else %}
+                  <span class="text-muted">تخصیص‌نیافته</span>
+                {% endif %}</td>
+                <td>{{ order.deadline|date:"Y/m/d H:i"|default:"—" }}</td>
+                <td><a href="{% url 'control_panel:order_detail' order.pk %}" class="btn btn-sm btn-soft-primary">بازکردن Workspace</a></td>
+              </tr>
+              {% empty %}<tr><td colspan="6" class="text-center text-muted py-4">سفارشی برای نمایش وجود ندارد.</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card">
+      <div class="card-header"><h4 class="card-title mb-0">مهلت‌های نزدیک</h4></div>
+      <div class="card-body">
+        {% for item in upcoming_deadlines %}
+        <div class="border rounded p-3 mb-2">
+          <div class="d-flex justify-content-between"><strong>{{ item.stage }}</strong><span class="badge bg-{% if item.due_at < now %}danger{% else %}warning{% endif %}-subtle text-dark">{{ item.get_status_display }}</span></div>
+          <small class="text-muted">{{ item.due_at|date:"Y/m/d H:i" }} · {{ item.owner_role }}</small>
+        </div>
+        {% empty %}<p class="text-muted mb-0">Deadline فعالی وجود ندارد.</p>{% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h4 class="card-title mb-0">خلاصه حساب</h4></div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-3"><span>پروژه‌ها</span><strong>{{ project_count }}</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>گفتگوها</span><strong>{{ conversation_count }}</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>تراکنش‌ها</span><strong>{{ transaction_count }}</strong></div>
+        <div class="d-flex justify-content-between"><span>Deadline فعال</span><strong>{{ active_deadlines }}</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if dashboard_kind == "admin" %}
+<div class="row">
+  <div class="col-xl-3 col-md-6"><div class="card border-start border-4 border-danger"><div class="card-body"><p class="text-muted mb-1">اختلاف باز</p><h4>{{ open_disputes }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card border-start border-4 border-warning"><div class="card-body"><p class="text-muted mb-1">Refund منتظر</p><h4>{{ pending_refunds }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card border-start border-4 border-info"><div class="card-body"><p class="text-muted mb-1">برداشت منتظر</p><h4>{{ pending_withdraws }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card border-start border-4 border-success"><div class="card-body"><p class="text-muted mb-1">میانگین امتیاز ادیتورها</p><h4>{{ editor_rating_average }}</h4></div></div></div>
+</div>
+{% elif dashboard_kind == "editor" %}
+<div class="row">
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">تحویل در ۴۸ ساعت</p><h4>{{ delivery_due_count }}</h4></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">کل درآمد ثبت‌شده</p><h4>{{ total_earnings|intcomma }} تومان</h4></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">برداشت منتظر</p><h4>{{ pending_withdraws }}</h4></div></div></div>
+</div>
+{% elif dashboard_kind == "client" %}
+<div class="row">
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">پیش‌نویس‌ها</p><h4>{{ draft_count }}</h4></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">سفارش دارای Escrow</p><h4>{{ escrow_orders }}</h4></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-body"><p class="text-muted">Refund در جریان</p><h4>{{ pending_refunds }}</h4></div></div></div>
+</div>
+{% endif %}
 {% endblock %}
+
 {% block extra_js %}
 <script src="/static/velzon_vendor/libs/apexcharts/apexcharts.min.js"></script>
-{{ order_status_labels|json_script:"order-status-labels" }}
-{{ order_status_values|json_script:"order-status-values" }}
-{{ role_labels|json_script:"role-labels" }}
-{{ role_values|json_script:"role-values" }}
-{{ order_month_labels|json_script:"order-month-labels" }}
-{{ order_month_values|json_script:"order-month-values" }}
-{{ project_month_values|json_script:"project-month-values" }}
+{{ month_labels|json_script:"dashboard-month-labels" }}
+{{ month_values|json_script:"dashboard-month-values" }}
+{{ status_labels|json_script:"dashboard-status-labels" }}
+{{ status_values|json_script:"dashboard-status-values" }}
 <script>
-const j=id=>JSON.parse(document.getElementById(id).textContent);
-new ApexCharts(document.querySelector("#statusChart"),{chart:{type:"donut"},series:j("order-status-values"),labels:j("order-status-labels"),legend:{position:"bottom"},dataLabels:{enabled:true}}).render();
-new ApexCharts(document.querySelector("#roleChart"),{chart:{type:"radialBar"},series:j("role-values"),labels:j("role-labels"),plotOptions:{radialBar:{dataLabels:{total:{show:true,label:"کاربران"}}}},legend:{show:true,position:"bottom"}}).render();
-new ApexCharts(document.querySelector("#trendChart"),{chart:{type:"area",toolbar:{show:false}},series:[{name:"سفارش",data:j("order-month-values")},{name:"پروژه",data:j("project-month-values")}],xaxis:{categories:j("order-month-labels")},stroke:{curve:"smooth"},dataLabels:{enabled:false},fill:{type:"gradient"}}).render();
+const readJson = id => JSON.parse(document.getElementById(id).textContent);
+const monthLabels = readJson("dashboard-month-labels");
+const monthValues = readJson("dashboard-month-values");
+const statusLabels = readJson("dashboard-status-labels");
+const statusValues = readJson("dashboard-status-values");
+
+if (document.querySelector("#orderTrendChart")) {
+  new ApexCharts(document.querySelector("#orderTrendChart"), {
+    chart: { type: "area", toolbar: { show: false }, height: 320 },
+    series: [{ name: "سفارش", data: monthValues }],
+    xaxis: { categories: monthLabels },
+    stroke: { curve: "smooth", width: 3 },
+    fill: { type: "gradient" },
+    dataLabels: { enabled: false },
+    noData: { text: "داده‌ای وجود ندارد" }
+  }).render();
+}
+if (document.querySelector("#orderStatusChart")) {
+  new ApexCharts(document.querySelector("#orderStatusChart"), {
+    chart: { type: "donut", height: 320 },
+    series: statusValues,
+    labels: statusLabels,
+    legend: { position: "bottom" },
+    noData: { text: "داده‌ای وجود ندارد" }
+  }).render();
+}
 </script>
 {% endblock %}

@@ -1,1 +1,54 @@
-{% extends "control_panel/_generic_list.html" %}{% block table_head %}<tr><th>#</th><th>نام کاربری</th><th>نام</th><th>ایمیل</th><th>نقش</th><th>فعال</th><th>عضویت</th></tr>{% endblock %}{% block table_body %}{% for row in rows %}<tr><td>{{ row.id }}</td><td>{{ row.username }}</td><td>{{ row.get_full_name|default:"—" }}</td><td>{{ row.email|default:"—" }}</td><td><span class="badge bg-info-subtle text-info">{{ row.get_role_display|default:row.role }}</span></td><td>{% if row.is_active %}<span class="badge bg-success">فعال</span>{% else %}<span class="badge bg-danger">غیرفعال</span>{% endif %}</td><td>{{ row.date_joined|date:"Y/m/d" }}</td></tr>{% empty %}<tr><td colspan="7" class="text-center text-muted py-4">داده‌ای موجود نیست.</td></tr>{% endfor %}{% endblock %}
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div><h4 class="mb-1">کاربران و ادیتورها</h4><p class="text-muted mb-0">ایجاد، ویرایش، تأیید و کنترل وضعیت حساب‌ها</p></div>
+    <a href="{% url 'control_panel:user_create' %}" class="btn btn-primary"><i class="ri-user-add-line me-1"></i>کاربر جدید</a>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">فعال</p><h4>{{ active_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">غیرفعال</p><h4>{{ inactive_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">تأییدشده</p><h4>{{ verified_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">ادیتورها</p><h4>{{ editor_count }}</h4></div></div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <form method="get" class="row g-2">
+      <div class="col-lg-5"><input name="q" value="{{ query }}" class="form-control" placeholder="نام، ایمیل، موبایل یا نام کاربری"></div>
+      <div class="col-lg-3"><select name="role" class="form-select"><option value="">همه نقش‌ها</option>{% for value,label in role_choices %}<option value="{{ value }}" {% if selected_role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-lg-2"><select name="state" class="form-select"><option value="">همه وضعیت‌ها</option><option value="active" {% if selected_state == "active" %}selected{% endif %}>فعال</option><option value="inactive" {% if selected_state == "inactive" %}selected{% endif %}>غیرفعال</option><option value="verified" {% if selected_state == "verified" %}selected{% endif %}>تأییدشده</option></select></div>
+      <div class="col-lg-2"><button class="btn btn-soft-primary w-100">فیلتر</button></div>
+    </form>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead class="table-light"><tr><th>کاربر</th><th>نقش</th><th>وضعیت</th><th>ادیتور</th><th>عضویت</th><th>عملیات</th></tr></thead>
+        <tbody>
+          {% for user in rows %}
+          <tr>
+            <td><div class="d-flex align-items-center"><div class="avatar-sm me-3"><span class="avatar-title rounded-circle bg-primary-subtle text-primary">{{ user.username|first|upper }}</span></div><div><strong>{{ user.get_full_name|default:user.username }}</strong><div class="small text-muted">{{ user.email|default:"بدون ایمیل" }} · {{ user.username }}</div></div></div></td>
+            <td><span class="badge bg-info-subtle text-info">{{ user.get_role_display }}</span>{% if user.is_superuser %}<span class="badge bg-danger-subtle text-danger ms-1">سوپرادمین</span>{% elif user.is_staff %}<span class="badge bg-warning-subtle text-warning ms-1">Staff</span>{% endif %}</td>
+            <td>{% if user.is_active %}<span class="badge bg-success-subtle text-success">فعال</span>{% else %}<span class="badge bg-danger-subtle text-danger">غیرفعال</span>{% endif %}{% if user.is_verified %}<span class="badge bg-primary-subtle text-primary ms-1">تأییدشده</span>{% endif %}</td>
+            <td>{% if user.role == "editor" %}{% if user.editor_profile %}<span class="badge bg-{% if user.editor_profile.is_available %}success{% else %}secondary{% endif %}-subtle text-dark">{{ user.editor_profile.get_level_display }} · {{ user.editor_profile.rating_average }}</span>{% else %}<span class="text-danger">پروفایل ندارد</span>{% endif %}{% else %}—{% endif %}</td>
+            <td>{{ user.date_joined|date:"Y/m/d" }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{% url 'control_panel:user_edit' user.pk %}" class="btn btn-sm btn-soft-primary"><i class="ri-edit-line"></i></a>
+                {% if user.pk != request.user.pk %}
+                <form method="post" action="{% url 'control_panel:user_toggle_active' user.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-soft-{% if user.is_active %}danger{% else %}success{% endif %}" title="{% if user.is_active %}غیرفعال‌کردن{% else %}فعال‌کردن{% endif %}"><i class="ri-{% if user.is_active %}user-unfollow{% else %}user-follow{% endif %}-line"></i></button></form>
+                {% endif %}
+                <form method="post" action="{% url 'control_panel:user_toggle_verified' user.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-soft-info" title="تغییر تأیید"><i class="ri-shield-check-line"></i></button></form>
+              </div>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="6" class="text-center text-muted py-5">کاربری پیدا نشد.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

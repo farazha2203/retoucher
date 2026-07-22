@@ -1,0 +1,29 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row mb-3"><div class="col"><h4>تنظیمات و امکانات مدیریتی</h4><p class="text-muted">مرکز یکپارچه تمام بخش‌های پنل جدید و پنل قدیمی Django</p></div></div>
+<div class="row">
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">مدل‌های مدیریتی</p><h4>{{ total_models }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">کل رکوردها</p><h4>{{ total_records }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">دارای صفحه اختصاصی</p><h4>{{ dedicated_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card card-animate"><div class="card-body"><p class="text-muted">در انتظار انتقال کامل</p><h4>{{ legacy_count }}</h4></div></div></div>
+</div>
+
+<div class="alert alert-info"><i class="ri-information-line me-2"></i>تمام امکانات پنل قدیمی در این صفحه فهرست شده‌اند. مدل‌هایی که هنوز UI اختصاصی Velzon ندارند از طریق دکمه «مدیریت فنی» قابل استفاده‌اند و در فازهای بعدی یکی‌یکی به صفحات گرافیکی منتقل می‌شوند.</div>
+
+{% for group in modules %}
+<div class="card">
+  <div class="card-header d-flex align-items-center"><div class="flex-grow-1"><h4 class="card-title mb-0">{{ group.label }}</h4><small class="text-muted">{{ group.app }}</small></div><span class="badge bg-primary-subtle text-primary">{{ group.count }} رکورد</span></div>
+  <div class="card-body"><div class="row">
+    {% for model in group.models %}
+    <div class="col-xl-3 col-lg-4 col-md-6">
+      <div class="border rounded p-3 mb-3 h-100">
+        <div class="d-flex justify-content-between align-items-start"><strong>{{ model.label }}</strong><span class="badge bg-light text-dark">{{ model.count }}</span></div>
+        <div class="small mt-2">{% if model.has_dedicated_page %}<span class="text-success"><i class="ri-checkbox-circle-line"></i> صفحه اختصاصی Velzon</span>{% else %}<span class="text-warning"><i class="ri-time-line"></i> مدیریت از پنل فنی</span>{% endif %}</div>
+        <div class="d-flex gap-2 mt-3">{% if model.list_url %}<a href="{{ model.list_url }}" class="btn btn-sm btn-soft-primary flex-grow-1">مدیریت فنی</a>{% endif %}{% if model.add_url %}<a href="{{ model.add_url }}" class="btn btn-sm btn-soft-success"><i class="ri-add-line"></i></a>{% endif %}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div></div>
+</div>
+{% endfor %}
+{% endblock %}

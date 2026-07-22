@@ -1,0 +1,35 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row mb-3"><div class="col d-flex justify-content-between"><div><h4>{{ page_title }}</h4><p class="text-muted">اطلاعات حساب و تنظیمات ادیتور</p></div><a href="{% url 'control_panel:users' %}" class="btn btn-soft-primary">بازگشت</a></div></div>
+<form method="post">{% csrf_token %}
+<div class="row">
+  <div class="col-xl-8">
+    <div class="card"><div class="card-header"><h5 class="card-title mb-0">اطلاعات حساب</h5></div><div class="card-body">
+      {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="row g-3">
+        {% for field in form %}
+        <div class="{% if field.name == 'is_active' or field.name == 'is_verified' or field.name == 'is_staff' %}col-md-4{% else %}col-md-6{% endif %}">
+          {% if field.field.widget.input_type == "checkbox" %}<div class="form-check mt-4">{{ field }} <label class="form-check-label">{{ field.label }}</label></div>{% else %}<label class="form-label">{{ field.label }}</label>{{ field }}{% endif %}
+          {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </div></div>
+  </div>
+  <div class="col-xl-4">
+    <div class="card"><div class="card-header"><h5 class="card-title mb-0">پروفایل ادیتور</h5></div><div class="card-body">
+      <p class="text-muted small">این اطلاعات فقط وقتی نقش کاربر «ادیتور» باشد ذخیره و استفاده می‌شود.</p>
+      {% for field in editor_form %}
+      <div class="mb-3">{% if field.field.widget.input_type == "checkbox" %}<div class="form-check">{{ field }} <label class="form-check-label">{{ field.label }}</label></div>{% else %}<label class="form-label">{{ field.label }}</label>{{ field }}{% endif %}{% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div>
+      {% endfor %}
+    </div></div>
+    {% if not creating and user_obj %}
+    <div class="card"><div class="card-body"><div class="d-grid gap-2">
+      {% if user_obj.pk != request.user.pk %}<form method="post" action="{% url 'control_panel:user_toggle_active' user_obj.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'control_panel:user_edit' user_obj.pk %}"><button type="submit" class="btn btn-{% if user_obj.is_active %}danger{% else %}success{% endif %} w-100">{% if user_obj.is_active %}غیرفعال‌کردن حساب{% else %}فعال‌کردن حساب{% endif %}</button></form>{% endif %}
+    </div></div></div>
+    {% endif %}
+  </div>
+</div>
+<div class="text-end mb-5"><button class="btn btn-primary px-5" type="submit">ذخیره اطلاعات</button></div>
+</form>
+{% endblock %}
