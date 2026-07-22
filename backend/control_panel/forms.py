@@ -306,3 +306,68 @@ class PanelProjectCreateForm(forms.Form):
             )
 
         return cleaned
+
+
+
+class ProjectSampleImageForm(forms.Form):
+    image = forms.ImageField(
+        label="تصویر نمونه مشتری",
+        widget=forms.ClearableFileInput(
+            attrs={
+                "class": "form-control",
+                "accept": "image/*",
+            }
+        ),
+    )
+    caption = forms.CharField(
+        label="توضیح تصویر",
+        required=False,
+        max_length=180,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "توضیح کوتاه درباره تصویر و نوع ادیت موردنظر",
+            }
+        ),
+    )
+
+
+class SampleProposalReviewForm(forms.Form):
+    approved = forms.BooleanField(
+        label="تأیید نمونه برای نمایش به مشتری",
+        required=False,
+        widget=forms.CheckboxInput(
+            attrs={"class": "form-check-input"}
+        ),
+    )
+    supervisor_score = forms.IntegerField(
+        label="امتیاز ناظر",
+        min_value=1,
+        max_value=10,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "form-control",
+                "min": 1,
+                "max": 10,
+            }
+        ),
+    )
+    supervisor_note = forms.CharField(
+        label="نظر ناظر",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 3,
+                "placeholder": "علت تأیید یا رد نمونه",
+            }
+        ),
+    )
+    is_visible_to_client = forms.BooleanField(
+        label="نمایش برای مشتری",
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(
+            attrs={"class": "form-check-input"}
+        ),
+    )

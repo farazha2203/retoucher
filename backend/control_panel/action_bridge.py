@@ -72,3 +72,31 @@ def invoke_project_action(request, pk, action_key):
     response = view(api_request, pk=str(pk))
     response.render()
     return response
+
+
+
+def invoke_project_proposal_action(
+    request,
+    *,
+    project_pk,
+    proposal_pk,
+    method_name,
+):
+    factory = APIRequestFactory()
+    api_request = factory.post(
+        (
+            f"/api/projects/requests/{project_pk}/"
+            f"proposals/{proposal_pk}/{method_name}/"
+        ),
+        _payload(request.POST, request.FILES),
+        format="multipart" if request.FILES else "json",
+    )
+    force_authenticate(api_request, user=request.user)
+    view = ProjectRequestViewSet.as_view({"post": method_name})
+    response = view(
+        api_request,
+        pk=str(project_pk),
+        proposal_id=str(proposal_pk),
+    )
+    response.render()
+    return response

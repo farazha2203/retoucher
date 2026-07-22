@@ -1,0 +1,86 @@
+{% extends "control_panel/base.html" %}
+{% load humanize %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col">
+    <h4 class="mb-1">انتخاب ادیتور</h4>
+    <p class="text-muted mb-0">نمونه‌کار Before/After، مهارت، امتیاز، قیمت و ظرفیت ادیتورها</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <form method="get" class="row g-2">
+      <div class="col-lg-5">
+        <input name="q" value="{{ query }}" class="form-control" placeholder="جستجوی نام یا توضیحات ادیتور">
+      </div>
+      <div class="col-lg-3">
+        <select name="style" class="form-select">
+          <option value="">همه سبک‌ها</option>
+          {% for style in styles %}
+          <option value="{{ style.slug }}" {% if selected_style == style.slug %}selected{% endif %}>{{ style.category.title }} — {{ style.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2">
+        <select name="level" class="form-select">
+          <option value="">همه سطح‌ها</option>
+          {% for value,label in levels %}
+          <option value="{{ value }}" {% if selected_level == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2"><button class="btn btn-primary w-100">جستجو</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-4">
+  {% for editor in rows %}
+  <div class="col-xl-4 col-md-6">
+    <div class="card card-animate h-100">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-3">
+          <div class="avatar-lg">
+            {% if editor.user.avatar %}
+            <img src="{{ editor.user.avatar.url }}" class="rounded-circle img-thumbnail">
+            {% else %}
+            <span class="avatar-title rounded-circle bg-primary-subtle text-primary fs-3">{{ editor.display_name|default:editor.user.username|first|upper }}</span>
+            {% endif %}
+          </div>
+          <div class="flex-grow-1">
+            <h5 class="mb-1">{{ editor.display_name|default:editor.user.username }}</h5>
+            <div class="text-muted small">{{ editor.get_level_display }} · امتیاز {{ editor.rating_average }}</div>
+            <div class="text-muted small">{{ editor.completed_orders_count }} سفارش تکمیل‌شده</div>
+          </div>
+          {% if editor.is_available %}<span class="badge bg-success-subtle text-success">آماده همکاری</span>{% endif %}
+        </div>
+
+        <p class="text-muted mt-3 mb-3">{{ editor.bio|truncatechars:140|default:"توضیحی ثبت نشده است." }}</p>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+          {% for skill in editor.skills.all %}
+          <span class="badge bg-light text-dark">{{ skill.title }}</span>
+          {% endfor %}
+        </div>
+
+        <div class="row text-center border-top border-bottom py-3 mb-3">
+          <div class="col"><small class="text-muted">قیمت پایه</small><div class="fw-semibold">{{ editor.base_price|intcomma }}</div></div>
+          <div class="col"><small class="text-muted">تحویل متوسط</small><div class="fw-semibold">{{ editor.average_delivery_hours }} ساعت</div></div>
+          <div class="col"><small class="text-muted">نمونه‌کار</small><div class="fw-semibold">{{ editor.portfolio_items.count }}</div></div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <a href="{% url 'control_panel:editor_detail' editor.pk %}" class="btn btn-soft-primary flex-grow-1">مشاهده نمونه‌کار</a>
+          {% if panel_is_client and editor.accepts_direct_requests %}
+          <a href="{% url 'control_panel:project_create' %}?editor={{ editor.pk }}" class="btn btn-success">درخواست مستقیم</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12"><div class="card"><div class="card-body text-center text-muted py-5">ادیتوری مطابق فیلترها پیدا نشد.</div></div></div>
+  {% endfor %}
+</div>
+{% endblock %}

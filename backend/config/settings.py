@@ -61,6 +61,9 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.humanize",
     "django.contrib.postgres",
+
+    # Required by django-allauth.
+    "django.contrib.sites",
 ]
 
 THIRD_PARTY_APPS = [
@@ -69,6 +72,12 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
+
+    # Authentication and social login.
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
 ]
 
 LOCAL_APPS = [
@@ -93,7 +102,13 @@ SMARTBASE_APPS = [
     # by Retoucher's local applications.
     "django_smartbase_admin",
 ]
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS + SMARTBASE_APPS
+
+INSTALLED_APPS = (
+    DJANGO_APPS
+    + THIRD_PARTY_APPS
+    + LOCAL_APPS
+    + SMARTBASE_APPS
+)
 
 
 MIDDLEWARE = [
@@ -104,6 +119,23 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "operations_hub.middleware.PanelAuditMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+
+    # Required by django-allauth.
+    "allauth.account.middleware.AccountMiddleware",
+
     "operations_hub.middleware.PanelAuditMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -233,6 +265,108 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
+
+# Required by django-allauth and django.contrib.sites.
+SITE_ID = env_int("DJANGO_SITE_ID", default=1)
+
+
+AUTHENTICATION_BACKENDS = [
+    # Existing username/password authentication.
+    "django.contrib.auth.backends.ModelBackend",
+
+    # django-allauth authentication.
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# -------------------------------------------------------------------
+# django-allauth
+# -------------------------------------------------------------------
+
+# Users may sign in using either username or email.
+ACCOUNT_LOGIN_METHODS = {
+    "username",
+    "email",
+}
+
+# Local signup fields.
+ACCOUNT_SIGNUP_FIELDS = [
+    "email*",
+    "username*",
+    "password1*",
+    "password2*",
+]
+
+# Keep local signup compatible with the current project.
+# Google already returns a verified email.
+ACCOUNT_EMAIL_VERIFICATION = "optional"
+
+ACCOUNT_UNIQUE_EMAIL = True
+
+# Do not expose whether an account exists for a given email.
+ACCOUNT_PREVENT_ENUMERATION = True
+
+# Social users are created without an extra signup form.
+SOCIALACCOUNT_AUTO_SIGNUP = True
+
+# Do not store Google access tokens unless the application later
+# needs to call Google APIs such as Drive or Gmail.
+SOCIALACCOUNT_STORE_TOKENS = False
+
+# Custom adapter keeps all new Google users as clients.
+SOCIALACCOUNT_ADAPTER = (
+    "accounts.adapters.RetoucherSocialAccountAdapter"
+)
+
+# Redirects after login/logout.
+LOGIN_URL = "/panel/login/"
+LOGIN_REDIRECT_URL = "/panel/"
+ACCOUNT_LOGOUT_REDIRECT_URL = "/panel/login/"
+
+
+GOOGLE_OAUTH_CLIENT_ID = os.getenv(
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "",
+)
+
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv(
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "",
+)
+
+
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        # Only the minimum scopes required for login.
+        "SCOPE": [
+            "openid",
+            "email",
+            "profile",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+            "prompt": "select_account",
+        },
+
+        # Protect the authorization-code exchange.
+        "OAUTH_PKCE_ENABLED": True,
+
+        # Google emails returned through this provider are treated
+        # as verified.
+        "VERIFIED_EMAIL": True,
+
+        # Allows a verified Google email to authenticate the existing
+        # local account with the same email instead of creating a
+        # duplicate account.
+        "EMAIL_AUTHENTICATION": True,
+
+        # Credentials are loaded from .env, not from GitHub.
+        "APP": {
+            "client_id": GOOGLE_OAUTH_CLIENT_ID,
+            "secret": GOOGLE_OAUTH_CLIENT_SECRET,
+            "key": "",
+        },
+    },
+}
 
 
 # Django REST Framework

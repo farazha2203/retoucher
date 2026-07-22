@@ -17,6 +17,8 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from orders.views import OrderViewSet
 from projects.views import ProjectRequestViewSet
+from accounts.models import EditorPortfolioItem, EditorProfile
+from projects.models import ProjectProposal, ProjectRequest
 
 from .forms import (
     AdminUserCreateForm,
@@ -24,6 +26,8 @@ from .forms import (
     EditorProfileAdminForm,
     PanelOrderCreateForm,
     PanelProjectCreateForm,
+    ProjectSampleImageForm,
+    SampleProposalReviewForm,
 )
 
 
@@ -46,6 +50,7 @@ from .action_bridge import (
     PROJECT_ACTION_METHODS,
     invoke_order_action,
     invoke_project_action,
+    invoke_project_proposal_action,
 )
 from .contracts import order_actions, project_actions
 from .dashboard_engine import build_dashboard_context
@@ -255,7 +260,18 @@ def project_create(request):
     if getattr(request.user, "role", "") != "client":
         raise PermissionDenied
 
-    form = PanelProjectCreateForm(request.POST or None)
+    initial = {}
+    editor_id = request.GET.get("editor", "").strip()
+    if editor_id and request.method == "GET":
+        initial = {
+            "request_type": ProjectRequest.RequestType.DIRECT_EDITOR,
+            "target_editor": editor_id,
+        }
+
+    form = PanelProjectCreateForm(
+        request.POST or None,
+        initial=initial,
+    )
 
     if request.method == "POST" and form.is_valid():
         cleaned = form.cleaned_data
@@ -401,6 +417,220 @@ def order_detail(request, pk):
 
 
 @login_required
+def editors_list(request):
+    style = request.GET.get("style", "").strip()
+    level = request.GET.get("level", "").strip()
+    query = request.GET.get("q", "").strip()
+
+    rows = (
+        EditorProfile.objects.filter(
+            user__is_active=True,
+            is_available=True,
+        )
+        .select_related("user")
+        .prefetch_related(
+            "skills",
+            "skills__category",
+            "portfolio_items",
+        )
+        .order_by("-rating_average", "-completed_orders_count", "display_name")
+    )
+
+    if style:
+        rows = rows.filter(skills__slug=style)
+    if level:
+        rows = rows.filter(level=level)
+    if query:
+        rows = rows.filter(
+            Q(display_name__icontains=query)
+            | Q(user__username__icontains=query)
+            | Q(bio__icontains=query)
+        )
+
+    EditStyle = _safe_model("catalog.EditStyle")
+    styles = (
+        EditStyle.objects.filter(is_active=True)
+        .select_related("category")
+        .order_by("category__sort_order", "sort_order", "title")
+        if EditStyle else []
+    )
+
+    return render(
+        request,
+        "control_panel/editors.html",
+        {
+            "page_title": "انتخاب ادیتور",
+            "rows": rows.distinct()[:200],
+            "styles": styles,
+            "levels": EditorProfile.EditorLevel.choices,
+            "selected_style": style,
+            "selected_level": level,
+            "query": query,
+        },
+    )
+
+
+@login_required
+def editor_detail(request, pk):
+    editor = get_object_or_404(
+        EditorProfile.objects.select_related("user")
+        .prefetch_related(
+            "skills",
+            "skills__category",
+            "portfolio_items__style",
+        ),
+        pk=pk,
+        user__is_active=True,
+    )
+
+    portfolio_items = editor.portfolio_items.filter(
+        is_active=True,
+    ).order_by("sort_order", "-created_at")
+
+    return render(
+        request,
+        "control_panel/editor_detail.html",
+        {
+            "page_title": editor.display_name or editor.user.username,
+            "editor": editor,
+            "portfolio_items": portfolio_items,
+        },
+    )
+
+
+@login_required
+@require_POST
+def project_upload_sample_image(request, pk):
+    project = get_object_or_404(ProjectRequest, pk=pk)
+
+    if project.client_id != request.user.id and not request.user.is_staff:
+        raise PermissionDenied
+
+    form = ProjectSampleImageForm(request.POST, request.FILES)
+
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                messages.error(request, str(error))
+        return redirect("control_panel:project_detail", pk=pk)
+
+    factory = APIRequestFactory()
+    api_request = factory.post(
+        f"/api/projects/requests/{pk}/images/",
+        {
+            "image": form.cleaned_data["image"],
+            "caption": form.cleaned_data.get("caption") or "",
+            "is_sample_image": True,
+        },
+        format="multipart",
+    )
+    force_authenticate(api_request, user=request.user)
+    api_view = ProjectRequestViewSet.as_view({"post": "upload_image"})
+    api_response = api_view(api_request, pk=str(pk))
+    api_response.render()
+
+    if api_response.status_code in {200, 201}:
+        messages.success(
+            request,
+            "تصویر نمونه مشتری با موفقیت اضافه شد.",
+        )
+    else:
+        detail = api_response.data
+        messages.error(request, f"خطا در بارگذاری تصویر: {detail}")
+
+    return redirect("control_panel:project_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def project_review_sample(request, pk, proposal_id):
+    project = get_object_or_404(ProjectRequest, pk=pk)
+    proposal = get_object_or_404(
+        ProjectProposal,
+        pk=proposal_id,
+        project_request=project,
+    )
+
+    if not request.user.is_staff:
+        raise PermissionDenied
+
+    form = SampleProposalReviewForm(request.POST)
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                messages.error(request, str(error))
+        return redirect("control_panel:project_detail", pk=pk)
+
+    payload = request.POST.copy()
+    payload["action"] = (
+        "approve" if form.cleaned_data["approved"] else "reject"
+    )
+
+    factory = APIRequestFactory()
+    api_request = factory.post(
+        (
+            f"/api/projects/requests/{pk}/proposals/"
+            f"{proposal_id}/review-sample/"
+        ),
+        payload,
+        format="json",
+    )
+    force_authenticate(api_request, user=request.user)
+    api_view = ProjectRequestViewSet.as_view(
+        {"post": "review_sample_proposal"}
+    )
+    api_response = api_view(
+        api_request,
+        pk=str(pk),
+        proposal_id=str(proposal_id),
+    )
+    api_response.render()
+
+    if api_response.status_code == 200:
+        messages.success(
+            request,
+            "بررسی نمونه ادیتور ثبت شد.",
+        )
+    else:
+        messages.error(
+            request,
+            f"ثبت بررسی نمونه ناموفق بود: {api_response.data}",
+        )
+
+    return redirect("control_panel:project_detail", pk=pk)
+
+
+@login_required
+@require_POST
+def project_select_proposal(request, pk, proposal_id):
+    project = get_object_or_404(ProjectRequest, pk=pk)
+
+    if project.client_id != request.user.id:
+        raise PermissionDenied
+
+    api_response = invoke_project_proposal_action(
+        request,
+        project_pk=pk,
+        proposal_pk=proposal_id,
+        method_name="select_proposal",
+    )
+
+    if api_response.status_code == 200:
+        messages.success(
+            request,
+            "ادیتور و پیشنهاد انتخاب شد. اکنون پروژه آماده تبدیل به سفارش است.",
+        )
+    else:
+        messages.error(
+            request,
+            f"انتخاب پیشنهاد ناموفق بود: {api_response.data}",
+        )
+
+    return redirect("control_panel:project_detail", pk=pk)
+
+
+
+@login_required
 def projects_list(request):
     Project = _safe_model("projects.ProjectRequest")
     rows = []
@@ -428,6 +658,8 @@ def project_detail(request, pk):
         "progress_percent": PROJECT_PROGRESS.get(project.status, 20),
         "is_project_staff": is_project_staff(request.user),
         "is_project_owner": project.client_id == request.user.id,
+        "sample_image_form": ProjectSampleImageForm(),
+        "sample_review_form": SampleProposalReviewForm(),
     }
     context.update(_project_workspace_context(request, project))
     return render(request, "control_panel/project_detail.html", context)

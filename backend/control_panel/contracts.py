@@ -83,7 +83,7 @@ def project_actions(user, project):
         actions.append(PanelAction("public_proposal", "ارسال پیشنهاد قیمت", "success", "ri-money-dollar-circle-line"))
 
     if profile and matching and project.request_type == "sample_challenge" and project.status == "open_for_samples":
-        actions.append(PanelAction("sample_proposal", "ارسال نمونه", "success", "ri-upload-cloud-line", requires_file=True))
+        actions.append(PanelAction("sample_proposal", "ارسال نمونه ادیت", "success", "ri-image-edit-line", requires_file=True, requires_note=True))
 
     if is_staff and project.request_type == "managed_order" and project.status == "submitted":
         actions.append(PanelAction("managed_assign", "تخصیص مدیریت‌شده", "primary", "ri-user-star-line", requires_editor=True))

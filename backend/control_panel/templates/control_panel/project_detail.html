@@ -42,7 +42,35 @@
             <div class="d-flex justify-content-between align-items-start"><div><h6>{{ proposal.editor.display_name|default:proposal.editor.user.username }}</h6><div class="small text-muted">امتیاز {{ proposal.editor.rating_average }} · {{ proposal.estimated_delivery_hours }} ساعت</div></div><span class="badge bg-primary-subtle text-primary">{{ proposal.get_status_display }}</span></div>
             <div class="row mt-3"><div class="col-md-4"><small class="text-muted">قیمت پیشنهادی</small><h6>{{ proposal.proposed_price|intcomma }}</h6></div>{% if is_project_staff %}<div class="col-md-4"><small class="text-muted">دستمزد ادیتور</small><h6>{{ proposal.editor_fee|intcomma }}</h6></div><div class="col-md-4"><small class="text-muted">امتیاز ناظر</small><h6>{{ proposal.supervisor_score|default:"—" }}</h6></div>{% endif %}</div>
             <p class="mb-0">{{ proposal.editor_note|default:"بدون توضیح" }}</p>
-            {% if proposal.sample_file %}<a href="{{ proposal.sample_file.url }}" target="_blank" class="btn btn-sm btn-soft-success mt-2">مشاهده نمونه</a>{% endif %}
+            {% if proposal.sample_file %}
+<a href="{{ proposal.sample_file.url }}" target="_blank" class="btn btn-sm btn-soft-success mt-2">
+  <i class="ri-image-edit-line me-1"></i>مشاهده نمونه ادیت
+</a>
+{% endif %}
+
+{% if is_project_staff and project.request_type == "sample_challenge" and proposal.sample_file %}
+<form method="post" action="{% url 'control_panel:project_review_sample' project.pk proposal.pk %}" class="border-top mt-3 pt-3">
+  {% csrf_token %}
+  <div class="row g-2">
+    <div class="col-md-3"><input type="number" name="supervisor_score" min="1" max="10" value="{{ proposal.supervisor_score|default:8 }}" class="form-control" required></div>
+    <div class="col-md-5"><input type="text" name="supervisor_note" value="{{ proposal.supervisor_note }}" class="form-control" placeholder="نظر ناظر"></div>
+    <div class="col-md-2"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="approved" id="approved-{{ proposal.pk }}" {% if proposal.status == "approved" %}checked{% endif %}><label class="form-check-label" for="approved-{{ proposal.pk }}">تأیید</label></div></div>
+    <div class="col-md-2"><div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="is_visible_to_client" id="visible-{{ proposal.pk }}" {% if proposal.is_visible_to_client %}checked{% endif %}><label class="form-check-label" for="visible-{{ proposal.pk }}">نمایش</label></div></div>
+  </div>
+  <button class="btn btn-sm btn-primary mt-2">ثبت بررسی نمونه</button>
+</form>
+{% endif %}
+
+{% if is_project_owner %}
+  {% if proposal.is_visible_to_client and proposal.status == "approved" %}
+  <form method="post" action="{% url 'control_panel:project_select_proposal' project.pk proposal.pk %}" class="mt-3">
+    {% csrf_token %}
+    <button class="btn btn-success w-100" onclick="return confirm('این ادیتور و پیشنهاد انتخاب شود؟')">
+      <i class="ri-user-star-line me-1"></i>انتخاب این ادیتور
+    </button>
+  </form>
+  {% endif %}
+{% endif %}
           </div>
           {% empty %}<div class="text-center text-muted py-4">پیشنهادی قابل مشاهده نیست.</div>{% endfor %}
         </div>
@@ -57,15 +85,46 @@
   </div>
 
   <div class="col-xl-4">
-    {% if allowed_actions %}
+    
+{% if is_project_owner and project.request_type == "sample_challenge" and project.status == "open_for_samples" %}
+<div class="card mb-3">
+  <div class="card-header"><h5 class="card-title mb-0">تصاویر مبنای چالش نمونه</h5></div>
+  <div class="card-body">
+    <p class="text-muted">تصویری را که می‌خواهید ادیتورها روی آن نمونه ادیت ارسال کنند بارگذاری کنید.</p>
+    <form method="post" enctype="multipart/form-data" action="{% url 'control_panel:project_upload_sample_image' project.pk %}">
+      {% csrf_token %}
+      <div class="mb-3">{{ sample_image_form.image }}</div>
+      <div class="mb-3">{{ sample_image_form.caption }}</div>
+      <button class="btn btn-info w-100"><i class="ri-image-add-line me-1"></i>افزودن تصویر نمونه</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if allowed_actions %}
     <div class="card"><div class="card-header"><h5 class="card-title mb-0">اقدام مجاز پروژه</h5></div><div class="card-body">
       {% for action in allowed_actions %}
       <form method="post" enctype="multipart/form-data" action="{% url 'control_panel:project_workflow_action' project.pk action.key %}" class="border rounded p-3 mb-3">{% csrf_token %}
         <div class="d-flex align-items-center gap-2 mb-2"><span class="avatar-xs"><span class="avatar-title rounded bg-{{ action.style }}-subtle text-{{ action.style }}"><i class="{{ action.icon }}"></i></span></span><strong>{{ action.label }}</strong></div>
         {% if action.requires_editor %}<input type="number" name="editor_id" class="form-control mb-2" placeholder="شناسه پروفایل ادیتور" required>{% endif %}
-        {% if action.requires_note %}<textarea name="note" class="form-control mb-2" rows="3" placeholder="توضیحات" required></textarea>{% endif %}
-        {% if action.requires_file %}<input type="file" name="{% if action.key == 'upload_image' %}image{% else %}sample_file{% endif %}" class="form-control mb-2" required>{% endif %}
-        {% if action.key == 'direct_proposal' or action.key == 'public_proposal' %}<div class="row g-2 mb-2"><div class="col-6"><input type="number" name="proposed_price" class="form-control" placeholder="قیمت" required></div><div class="col-6"><input type="number" name="estimated_delivery_hours" class="form-control" value="24" required></div></div><textarea name="editor_note" class="form-control mb-2" placeholder="توضیح پیشنهاد"></textarea>{% endif %}
+        {% if action.key == "sample_proposal" %}
+        <div class="row g-2 mb-2">
+          <div class="col-6"><input type="number" name="proposed_price" min="1" class="form-control" placeholder="قیمت پیشنهادی" required></div>
+          <div class="col-6"><input type="number" name="estimated_delivery_hours" min="1" value="24" class="form-control" placeholder="زمان تحویل" required></div>
+        </div>
+        <textarea name="sample_note" class="form-control mb-2" rows="3" placeholder="توضیح نمونه و روش اجرا"></textarea>
+        <input type="file" name="sample_file" class="form-control mb-2" required>
+        {% else %}
+          {% if action.requires_note %}<textarea name="{% if action.key == 'direct_decline' %}editor_note{% else %}note{% endif %}" class="form-control mb-2" rows="3" placeholder="توضیحات" required></textarea>{% endif %}
+          {% if action.requires_file %}<input type="file" name="{% if action.key == 'upload_image' %}image{% else %}sample_file{% endif %}" class="form-control mb-2" required>{% endif %}
+          {% if action.key == 'direct_proposal' or action.key == 'public_proposal' %}
+          <div class="row g-2 mb-2">
+            <div class="col-6"><input type="number" name="proposed_price" min="1" class="form-control" placeholder="قیمت" required></div>
+            <div class="col-6"><input type="number" name="estimated_delivery_hours" min="1" value="24" class="form-control" required></div>
+          </div>
+          <textarea name="editor_note" class="form-control mb-2" placeholder="توضیح پیشنهاد"></textarea>
+          {% endif %}
+        {% endif %}
         <button class="btn btn-{{ action.style }} w-100"><i class="{{ action.icon }} me-1"></i>{{ action.label }}</button>
       </form>
       {% endfor %}

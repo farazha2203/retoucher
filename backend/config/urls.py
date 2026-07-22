@@ -33,6 +33,8 @@ urlpatterns = [
     path("admin/", RedirectView.as_view(pattern_name="control_panel:dashboard", permanent=False)),
     path("system-admin/", RedirectView.as_view(pattern_name="control_panel:backend_modules", permanent=False), name="system-admin"),
     path("smartbase-admin/", sb_admin_site.urls),
+    path("accounts/", include("allauth.urls")),
+
 
     path("i18n/", include("django.conf.urls.i18n")),
     path("ckeditor/", include("ckeditor_uploader.urls")),

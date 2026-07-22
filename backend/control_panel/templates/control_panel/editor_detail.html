@@ -1,0 +1,79 @@
+{% extends "control_panel/base.html" %}
+{% load humanize %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col-lg-8">
+    <div class="d-flex align-items-center gap-3">
+      <div class="avatar-xl">
+        {% if editor.user.avatar %}
+        <img src="{{ editor.user.avatar.url }}" class="rounded-circle img-thumbnail">
+        {% else %}
+        <span class="avatar-title rounded-circle bg-primary-subtle text-primary display-6">{{ editor.display_name|default:editor.user.username|first|upper }}</span>
+        {% endif %}
+      </div>
+      <div>
+        <h3 class="mb-1">{{ editor.display_name|default:editor.user.username }}</h3>
+        <div class="text-muted">{{ editor.get_level_display }} · امتیاز {{ editor.rating_average }} · {{ editor.completed_orders_count }} سفارش تکمیل‌شده</div>
+        <div class="mt-2">
+          {% for skill in editor.skills.all %}<span class="badge bg-info-subtle text-info me-1">{{ skill.title }}</span>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">
+    <a href="{% url 'control_panel:editors' %}" class="btn btn-soft-primary">بازگشت</a>
+    {% if panel_is_client and editor.accepts_direct_requests %}
+    <a href="{% url 'control_panel:project_create' %}?editor={{ editor.pk }}" class="btn btn-success">درخواست مستقیم</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xl-4">
+    <div class="card">
+      <div class="card-body">
+        <h5>درباره ادیتور</h5>
+        <p class="text-muted">{{ editor.bio|linebreaksbr|default:"توضیحی ثبت نشده است." }}</p>
+        <hr>
+        <div class="d-flex justify-content-between mb-3"><span>قیمت پایه</span><strong>{{ editor.base_price|intcomma }} تومان</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>زمان متوسط تحویل</span><strong>{{ editor.average_delivery_hours }} ساعت</strong></div>
+        <div class="d-flex justify-content-between mb-3"><span>درخواست مستقیم</span><strong>{% if editor.accepts_direct_requests %}فعال{% else %}غیرفعال{% endif %}</strong></div>
+        <div class="d-flex justify-content-between"><span>چالش نمونه</span><strong>{% if editor.accepts_sample_challenges %}فعال{% else %}غیرفعال{% endif %}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-8">
+    <div class="card">
+      <div class="card-header"><h4 class="card-title mb-0">نمونه‌کارهای Before / After</h4></div>
+      <div class="card-body">
+        <div class="row g-4">
+          {% for item in portfolio_items %}
+          <div class="col-md-6">
+            <div class="border rounded overflow-hidden h-100">
+              <div class="row g-0">
+                <div class="col-6 position-relative">
+                  {% if item.before_image %}<img src="{{ item.before_image.url }}" class="img-fluid w-100" style="height:220px;object-fit:cover">{% else %}<div class="bg-light h-100 d-flex align-items-center justify-content-center text-muted">بدون تصویر قبل</div>{% endif %}
+                  <span class="badge bg-dark position-absolute top-0 start-0 m-2">قبل</span>
+                </div>
+                <div class="col-6 position-relative">
+                  {% if item.after_image %}<img src="{{ item.after_image.url }}" class="img-fluid w-100" style="height:220px;object-fit:cover">{% else %}<div class="bg-light h-100 d-flex align-items-center justify-content-center text-muted">بدون تصویر بعد</div>{% endif %}
+                  <span class="badge bg-success position-absolute top-0 start-0 m-2">بعد</span>
+                </div>
+              </div>
+              <div class="p-3">
+                <div class="d-flex justify-content-between"><h6>{{ item.title }}</h6>{% if item.is_featured %}<span class="badge bg-warning-subtle text-warning">ویژه</span>{% endif %}</div>
+                <p class="text-muted small mb-1">{{ item.description|default:"" }}</p>
+                {% if item.style %}<span class="badge bg-light text-dark">{{ item.style.title }}</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% empty %}
+          <div class="col-12 text-center text-muted py-5">این ادیتور هنوز نمونه‌کار عمومی ثبت نکرده است.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
