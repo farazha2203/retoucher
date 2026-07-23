@@ -89,6 +89,7 @@ LOCAL_APPS = [
     "notifications",
     "payments",
     "control_panel",
+    "customer_membership.apps.CustomerMembershipConfig",
 ]
 
 
@@ -529,3 +530,12 @@ SILENCED_SYSTEM_CHECKS = ["sbadmin.W003"]
 
 FRONTEND_AUTH_CALLBACK_URL = os.getenv("FRONTEND_AUTH_CALLBACK_URL", "http://localhost:3000/auth/callback")
 SOCIAL_EXCHANGE_CODE_TTL_SECONDS = env_int("SOCIAL_EXCHANGE_CODE_TTL_SECONDS", default=60)
+
+# Secure branded Google login confirmation.
+SOCIALACCOUNT_LOGIN_ON_GET = False
+
+# Allowed values: frontend, panel
+CLIENT_EDITOR_LOGIN_DESTINATION = os.getenv(
+    "CLIENT_EDITOR_LOGIN_DESTINATION",
+    "frontend",
+).strip().lower()

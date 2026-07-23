@@ -19,6 +19,8 @@ class EditorPortfolioItemSerializer(serializers.ModelSerializer):
             "before_image",
             "after_image",
             "is_featured",
+            "review_note",
+            "review_status",
         ]
 
 

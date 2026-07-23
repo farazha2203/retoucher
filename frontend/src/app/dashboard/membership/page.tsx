@@ -1,0 +1,6 @@
+'use client';
+import { useEffect,useState } from 'react';
+import { Crown,Sparkles } from 'lucide-react';
+import { customerAPI } from '@/lib/api/customer';
+import type { CustomerTier } from '@/lib/types/customer';
+export default function Page(){const [tiers,setTiers]=useState<CustomerTier[]>([]);useEffect(()=>{void customerAPI.getTiers().then(setTiers)},[]);return <div><section className="rounded-[34px] bg-gradient-to-l from-[#f9e4ec] via-[#eee8fb] to-[#e3f4ec] p-8 text-center"><Sparkles className="mx-auto text-[#9b85e8]"/><h1 className="mt-3 text-3xl font-black">پلن مشتریان ریتاچر</h1></section><section className="mt-7 grid gap-5 lg:grid-cols-3">{tiers.map(t=><article key={t.id} className="rounded-[30px] border bg-white p-6"><Crown style={{color:t.badge_color}}/><h2 className="mt-5 text-xl font-black">{t.title}</h2><p className="mt-3 min-h-16 text-sm leading-7 text-[#84798b]">{t.description}</p><div className="mt-5 rounded-2xl bg-[#faf8fc] p-4 text-center"><strong className="text-3xl">{t.discount_percent}٪</strong><span className="block text-xs">تخفیف سفارش</span></div><ul className="mt-5 space-y-3 text-sm"><li>✓ اولویت سطح {t.priority_level}</li><li>✓ لوگو: {t.logo_enabled?'فعال':'غیرفعال'}</li><li>✓ تبلیغات: {t.advertising_enabled?'فعال':'غیرفعال'}</li></ul></article>)}</section></div>}

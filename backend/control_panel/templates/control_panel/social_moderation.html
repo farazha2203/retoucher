@@ -1,0 +1,94 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row mb-3">
+  <div class="col">
+    <h4 class="mb-1">مدیریت لایک و دیدگاه نمونه‌کارها</h4>
+    <p class="text-muted mb-0">تأیید، مخفی‌سازی و بررسی گزارش‌های کاربران</p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><p class="text-muted">در انتظار بررسی</p><h4>{{ pending_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><p class="text-muted">تأییدشده</p><h4>{{ approved_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><p class="text-muted">گزارش باز</p><h4>{{ open_reports_count }}</h4></div></div></div>
+  <div class="col-xl-3 col-md-6"><div class="card"><div class="card-body"><p class="text-muted">کل لایک‌ها</p><h4>{{ likes_count }}</h4></div></div></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <form method="get" class="row g-2">
+      <div class="col-lg-6"><input name="q" value="{{ query }}" class="form-control" placeholder="جستجو در متن، کاربر یا نمونه‌کار"></div>
+      <div class="col-lg-4">
+        <select name="state" class="form-select">
+          <option value="pending" {% if selected_state == "pending" %}selected{% endif %}>در انتظار بررسی</option>
+          <option value="approved" {% if selected_state == "approved" %}selected{% endif %}>تأییدشده</option>
+          <option value="hidden" {% if selected_state == "hidden" %}selected{% endif %}>مخفی‌شده</option>
+          <option value="all" {% if selected_state == "all" %}selected{% endif %}>همه</option>
+        </select>
+      </div>
+      <div class="col-lg-2"><button class="btn btn-primary w-100">فیلتر</button></div>
+    </form>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead class="table-light"><tr><th>کاربر</th><th>نمونه‌کار</th><th>دیدگاه</th><th>وضعیت</th><th>گزارش</th><th>عملیات</th></tr></thead>
+        <tbody>
+        {% for comment in comments %}
+          <tr>
+            <td>{{ comment.user.username }}</td>
+            <td><strong>{{ comment.portfolio_item.title }}</strong><div class="small text-muted">{{ comment.portfolio_item.editor.display_name }}</div></td>
+            <td style="min-width:280px">{{ comment.body|truncatechars:180 }}</td>
+            <td>{{ comment.get_status_display }}</td>
+            <td>{{ comment.report_count }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <form method="post" action="{% url 'control_panel:moderate_portfolio_comment' comment.pk %}">
+                  {% csrf_token %}<input type="hidden" name="action" value="approve"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button class="btn btn-sm btn-soft-success">تأیید</button>
+                </form>
+                <form method="post" action="{% url 'control_panel:moderate_portfolio_comment' comment.pk %}">
+                  {% csrf_token %}<input type="hidden" name="action" value="hide"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button class="btn btn-sm btn-soft-danger">مخفی</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-5">دیدگاهی وجود ندارد.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h4 class="card-title mb-0">گزارش‌های اخیر</h4></div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead class="table-light"><tr><th>گزارش‌دهنده</th><th>دیدگاه</th><th>علت</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+        <tbody>
+        {% for report in reports %}
+          <tr>
+            <td>{{ report.reporter.username }}</td>
+            <td>{{ report.comment.body|truncatechars:100 }}</td>
+            <td>{{ report.reason|truncatechars:120 }}</td>
+            <td>{{ report.get_status_display }}</td>
+            <td>
+              <div class="d-flex gap-1">
+                <form method="post" action="{% url 'control_panel:moderate_portfolio_report' report.pk %}">{% csrf_token %}<input type="hidden" name="action" value="review"><button class="btn btn-sm btn-soft-primary">بررسی شد</button></form>
+                <form method="post" action="{% url 'control_panel:moderate_portfolio_report' report.pk %}">{% csrf_token %}<input type="hidden" name="action" value="dismiss"><button class="btn btn-sm btn-soft-secondary">رد گزارش</button></form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-4">گزارشی وجود ندارد.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

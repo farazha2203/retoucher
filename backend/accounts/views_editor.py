@@ -1,14 +1,17 @@
 from django.db.models import Prefetch
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from .models import EditorPortfolioItem, EditorProfile
+from .editor_workspace_mixin import EditorWorkspaceActionsMixin
 from .serializers_editor import (
     EditorProfileDetailSerializer,
     EditorProfileListSerializer,
 )
 
 
-class EditorProfileViewSet(viewsets.ReadOnlyModelViewSet):
+class EditorProfileViewSet(EditorWorkspaceActionsMixin, viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):
@@ -57,3 +60,42 @@ class EditorProfileViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(accepts_sample_challenges=True)
 
         return queryset.distinct()
+
+    @action(detail=False, methods=("get", "patch"), permission_classes=(permissions.IsAuthenticated,), url_path="me")
+    def me(self, request):
+        profile = EditorProfile.objects.filter(user=request.user).first()
+        if profile is None:
+            return Response({"detail": "پروفایل ادیتور وجود ندارد."}, status=status.HTTP_404_NOT_FOUND)
+        if request.method == "GET":
+            return Response(EditorProfileDetailSerializer(profile, context={"request": request}).data)
+
+        for field in (
+            "display_name", "bio", "base_price", "average_delivery_hours",
+            "is_available", "accepts_direct_requests",
+            "accepts_public_requests", "accepts_sample_challenges",
+        ):
+            if field in request.data:
+                setattr(profile, field, request.data[field])
+        profile.save()
+        return Response(EditorProfileDetailSerializer(profile, context={"request": request}).data)
+
+    @action(detail=False, methods=("post",), permission_classes=(permissions.IsAuthenticated,), url_path="me/portfolio")
+    def create_portfolio_item(self, request):
+        profile = EditorProfile.objects.filter(user=request.user).first()
+        if profile is None:
+            return Response({"detail": "پروفایل ادیتور وجود ندارد."}, status=status.HTTP_404_NOT_FOUND)
+
+        title = str(request.data.get("title") or "").strip()
+        if not title:
+            return Response({"title": ["عنوان الزامی است."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        item = EditorPortfolioItem.objects.create(
+            editor=profile,
+            title=title,
+            description=request.data.get("description", ""),
+            before_image=request.FILES.get("before_image"),
+            after_image=request.FILES.get("after_image"),
+            is_active=False,
+        )
+        return Response({"id": item.id, "status": "created_pending_review"}, status=status.HTTP_201_CREATED)
+

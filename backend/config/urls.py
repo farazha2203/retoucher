@@ -28,6 +28,7 @@ from rest_framework_simplejwt.views import (
 # sb_admin_site.urls. SmartBase generates URL patterns from this registry.
 register_retoucher_admins()
 urlpatterns = [
+    path("api/customer/", include("customer_membership.urls")),
     path("django-admin/", admin.site.urls),
     path("panel/", include("control_panel.urls")),
     path("admin/", RedirectView.as_view(pattern_name="control_panel:dashboard", permanent=False)),

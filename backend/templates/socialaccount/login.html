@@ -1,0 +1,18 @@
+{% extends "allauth/layouts/entrance.html" %}
+{% block head_title %}ورود امن با گوگل | ریتاچر{% endblock %}
+{% block inner_content %}
+<div class="center">
+  <div class="google">G</div>
+  <h2>ورود امن با گوگل</h2>
+  <p class="lead">در حال انتقال به صفحه امن Google هستید.</p>
+  <div class="spinner"></div>
+</div>
+<form method="post" id="google-login-confirm">{% csrf_token %}<button type="submit" class="btn primary">ادامه با Google</button></form>
+<a class="btn light" href="http://localhost:3000/login">بازگشت به ورود</a>
+<div class="security">🔒 ریتاچر رمز عبور Google شما را ذخیره نمی‌کند.</div>
+{% endblock %}
+{% block extra_body %}
+<script>
+(function(){const form=document.getElementById('google-login-confirm');setTimeout(function(){if(form&&!form.dataset.sent){form.dataset.sent='1';form.submit();}},350);})();
+</script>
+{% endblock %}

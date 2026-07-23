@@ -101,6 +101,29 @@ class EditorProfile(models.Model):
 
 
 class EditorPortfolioItem(models.Model):
+
+    class ReviewStatus(models.TextChoices):
+        DRAFT = "draft", "پیش‌نویس"
+        PENDING = "pending", "در انتظار بررسی"
+        APPROVED = "approved", "تأییدشده"
+        REJECTED = "rejected", "ردشده"
+
+    review_status = models.CharField(
+        max_length=20,
+        choices=ReviewStatus.choices,
+        default=ReviewStatus.DRAFT,
+        db_index=True,
+    )
+    review_note = models.CharField(max_length=500, blank=True, default="")
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_portfolio_items",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
     editor = models.ForeignKey(
         EditorProfile,
         on_delete=models.CASCADE,
@@ -159,4 +182,108 @@ class SocialAuthExchangeCode(models.Model):
 
     def __str__(self):
         return f"{self.user_id} - {self.created_at:%Y-%m-%d %H:%M:%S}"
+
+
+class PortfolioLike(models.Model):
+    portfolio_item = models.ForeignKey(
+        EditorPortfolioItem,
+        on_delete=models.CASCADE,
+        related_name="likes",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_likes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("portfolio_item", "user"),
+                name="accounts_unique_portfolio_like",
+            )
+        ]
+        ordering = ("-created_at",)
+
+
+class PortfolioComment(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "در انتظار بررسی"
+        APPROVED = "approved", "تأییدشده"
+        HIDDEN = "hidden", "مخفی‌شده"
+
+    portfolio_item = models.ForeignKey(
+        EditorPortfolioItem,
+        on_delete=models.CASCADE,
+        related_name="social_comments",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_comments",
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        related_name="replies",
+        null=True,
+        blank=True,
+    )
+    body = models.TextField(max_length=2000)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    is_edited = models.BooleanField(default=False)
+    moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_portfolio_comments",
+    )
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("created_at",)
+
+
+class PortfolioCommentReport(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open", "باز"
+        REVIEWED = "reviewed", "بررسی‌شده"
+        DISMISSED = "dismissed", "رد گزارش"
+
+    comment = models.ForeignKey(
+        PortfolioComment,
+        on_delete=models.CASCADE,
+        related_name="reports",
+    )
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolio_comment_reports",
+    )
+    reason = models.CharField(max_length=500)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("comment", "reporter"),
+                name="accounts_unique_portfolio_comment_report",
+            )
+        ]
+        ordering = ("-created_at",)
 

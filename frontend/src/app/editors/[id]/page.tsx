@@ -210,6 +210,12 @@ export default function EditorDetailPage() {
                               {item.description}
                             </p>
                           )}
+                          <Link
+                            href={`/portfolio/${item.id}`}
+                            className="mt-4 inline-flex rounded-xl bg-violet-50 px-4 py-2 text-xs font-bold text-violet-700"
+                          >
+                            لایک، دیدگاه و مشاهده Before / After
+                          </Link>
                         </div>
                       </div>
                     );

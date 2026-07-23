@@ -1,0 +1,27 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="row mb-3"><div class="col"><h4>بررسی نمونه‌کار ادیتورها</h4><p class="text-muted">تأیید یا رد Before / After پیش از انتشار عمومی</p></div></div>
+<div class="card"><div class="card-header">
+<form method="get" class="row g-2"><div class="col-md-8">
+<select name="state" class="form-select">
+<option value="pending">در انتظار بررسی</option>
+<option value="draft">پیش‌نویس</option>
+<option value="approved">تأییدشده</option>
+<option value="rejected">ردشده</option>
+<option value="all">همه</option>
+</select></div><div class="col-md-4"><button class="btn btn-primary w-100">فیلتر</button></div></form>
+</div><div class="card-body"><div class="row g-4">
+{% for item in items %}
+<div class="col-xl-4 col-md-6"><div class="border rounded overflow-hidden h-100">
+<div class="row g-0">
+<div class="col-6">{% if item.before_image %}<img src="{{ item.before_image.url }}" class="w-100" style="height:190px;object-fit:cover">{% else %}<div class="bg-light d-flex align-items-center justify-content-center" style="height:190px">بدون قبل</div>{% endif %}</div>
+<div class="col-6">{% if item.after_image %}<img src="{{ item.after_image.url }}" class="w-100" style="height:190px;object-fit:cover">{% else %}<div class="bg-light d-flex align-items-center justify-content-center" style="height:190px">بدون بعد</div>{% endif %}</div>
+</div>
+<div class="p-3"><h5>{{ item.title }}</h5><div class="small text-muted mb-2">{{ item.editor.display_name }} · {{ item.get_review_status_display }}</div>
+<form method="post" action="{% url 'control_panel:review_portfolio_item' item.pk %}">{% csrf_token %}
+<textarea name="review_note" class="form-control mb-2" rows="2" placeholder="یادداشت بررسی">{{ item.review_note }}</textarea>
+<div class="d-flex gap-2"><button name="action" value="approve" class="btn btn-success flex-grow-1">تأیید و انتشار</button><button name="action" value="reject" class="btn btn-danger flex-grow-1">رد</button></div>
+</form></div></div></div>
+{% empty %}<div class="col-12 text-center text-muted py-5">نمونه‌کاری وجود ندارد.</div>{% endfor %}
+</div></div></div>
+{% endblock %}

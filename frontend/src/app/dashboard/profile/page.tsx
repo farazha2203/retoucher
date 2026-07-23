@@ -1,0 +1,13 @@
+'use client';
+import { useEffect,useState } from 'react';
+import { Save,UserRound,Building2 } from 'lucide-react';
+import { customerAPI } from '@/lib/api/customer';
+import type { CustomerProfile } from '@/lib/types/customer';
+export default function Page(){
+ const [p,setP]=useState<CustomerProfile|null>(null); const [msg,setMsg]=useState('');
+ useEffect(()=>{void customerAPI.getProfile().then(setP).catch(()=>setMsg('خطا در دریافت اطلاعات'));},[]);
+ if(!p)return <div className="rounded-3xl bg-white p-8">{msg||'در حال دریافت...'}</div>;
+ const studio=['studio','studio_vip'].includes(p.tier?.code||'');
+ const save=async()=>{try{setP(await customerAPI.updateProfile(p));setMsg('ذخیره شد.')}catch{setMsg('ذخیره ناموفق بود.')}};
+ const field=(label:string,key:keyof CustomerProfile,type='text')=><label><span className="mb-2 block text-sm font-bold">{label}</span><input type={type} value={(p[key] as string)||''} onChange={e=>setP({...p,[key]:e.target.value})} className="w-full rounded-2xl border border-[#e7dfeb] bg-[#fcfbfd] p-3"/></label>;
+ return <div className="space-y-6"><section className="rounded-[34px] bg-gradient-to-l from-[#f7dbe7] via-[#eee7fb] to-[#dff3ea] p-7"><h1 className="text-3xl font-black">پروفایل مشتری</h1><p className="mt-2 text-sm text-[#756a7d]">اطلاعات هویتی، شغلی و آتلیه</p></section>{msg&&<div className="rounded-2xl bg-white p-4">{msg}</div>}<section className="grid gap-6 xl:grid-cols-2"><div className="rounded-[30px] border bg-white p-6"><div className="flex gap-2"><UserRound/><h2 className="font-black">اطلاعات فردی</h2></div><div className="mt-5 grid gap-4 md:grid-cols-2">{field('کد ملی','national_id')}{field('تاریخ تولد','birth_date','date')}{field('تلفن ثابت','landline')}{field('شغل','occupation')}{field('استان','province')}{field('شهر','city')}{field('کد پستی','postal_code')}<label className="md:col-span-2"><span className="mb-2 block text-sm font-bold">آدرس</span><textarea value={p.address} onChange={e=>setP({...p,address:e.target.value})} className="w-full rounded-2xl border p-3" rows={4}/></label></div></div><div className="rounded-[30px] border bg-white p-6"><div className="flex gap-2"><Building2/><h2 className="font-black">اطلاعات آتلیه</h2></div>{studio?<p className="mt-5 text-sm text-[#756a7d]">فرم کامل آتلیه در مرحله بعدی فعال می‌شود؛ زیرساخت دیتابیس آن اکنون ایجاد شده است.</p>:<div className="mt-5 rounded-3xl bg-[#f3eef9] p-6 text-sm">برای اطلاعات آتلیه، پلن آتلیه‌دار را فعال کن.</div>}</div></section><button onClick={save} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-l from-[#df79a0] to-[#9278db] p-4 font-black text-white"><Save size={18}/>ذخیره اطلاعات</button></div>;}

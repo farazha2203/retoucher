@@ -1,193 +1,135 @@
 'use client';
 
+import Link from 'next/link';
 import {
-  AlertTriangle,
+  ArrowLeft,
   BriefcaseBusiness,
-  CheckCircle2,
   FolderKanban,
+  Heart,
+  Sparkles,
+  Star,
+  WalletCards,
 } from 'lucide-react';
 
-import { EntityCard } from '@/components/workflow/EntityCard';
-import { TimelinePanel } from '@/components/workflow/TimelinePanel';
-import { useOrders, useOrderTimeline } from '@/lib/hooks/useOrders';
-import {
-  useProjectRequests,
-  useProjectTimeline,
-} from '@/lib/hooks/useProjectRequests';
-import { useState } from 'react';
+import { useAuthStore } from '@/lib/stores/auth.store';
 
-type SelectedEntity =
-  | { type: 'order'; id: number; title: string }
-  | { type: 'project'; id: number; title: string }
-  | null;
+const cards = [
+  {
+    label: 'سفارش‌های فعال',
+    value: '—',
+    icon: BriefcaseBusiness,
+    bg: 'from-[#fae1eb] to-[#f8edf3]',
+    iconBg: 'bg-[#f5c8d9] text-[#b85e7e]',
+  },
+  {
+    label: 'پروژه‌های من',
+    value: '—',
+    icon: FolderKanban,
+    bg: 'from-[#ebe4fa] to-[#f5f1fc]',
+    iconBg: 'bg-[#d9cdf3] text-[#765ca5]',
+  },
+  {
+    label: 'کیف پول',
+    value: '—',
+    icon: WalletCards,
+    bg: 'from-[#dff2e9] to-[#eff9f4]',
+    iconBg: 'bg-[#bfe2d2] text-[#477f69]',
+  },
+  {
+    label: 'امتیاز و محبوبیت',
+    value: '—',
+    icon: Star,
+    bg: 'from-[#fff0d9] to-[#fff8eb]',
+    iconBg: 'bg-[#f6ddb4] text-[#9d7436]',
+  },
+];
 
 export default function DashboardPage() {
-  const orders = useOrders();
-  const projects = useProjectRequests();
-  const [selected, setSelected] = useState<SelectedEntity>(null);
-
-  const orderTimeline = useOrderTimeline(
-    selected?.type === 'order' ? selected.id : null,
-  );
-  const projectTimeline = useProjectTimeline(
-    selected?.type === 'project' ? selected.id : null,
-  );
-
-  const orderList = orders.data || [];
-  const projectList = projects.data || [];
-  const allWorkflows = [
-    ...orderList.map((item) => item.workflow),
-    ...projectList.map((item) => item.workflow),
-  ];
-
-  const stats = [
-    {
-      title: 'سفارش‌ها',
-      value: orderList.length,
-      icon: BriefcaseBusiness,
-    },
-    {
-      title: 'درخواست‌ها',
-      value: projectList.length,
-      icon: FolderKanban,
-    },
-    {
-      title: 'در حال اجرا',
-      value: allWorkflows.filter((item) => !item.terminal).length,
-      icon: CheckCircle2,
-    },
-    {
-      title: 'گذشته از موعد',
-      value: allWorkflows.filter((item) => item.deadline?.is_overdue).length,
-      icon: AlertTriangle,
-    },
-  ];
-
-  const loading = orders.isLoading || projects.isLoading;
-  const error = orders.isError || projects.isError;
+  const user = useAuthStore((state) => state.user);
 
   return (
-    <>
-      <div className="mb-7">
-        <p className="text-xs font-bold text-[#8B7F73]">نمای کلی</p>
-        <h1 className="mt-1 text-2xl font-black text-[#332A23]">
-          وضعیت سفارش‌ها و پروژه‌ها
-        </h1>
-      </div>
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[36px] border border-white/80 bg-white/62 p-7 shadow-[0_30px_80px_rgba(106,84,130,.10)] backdrop-blur-2xl sm:p-9">
+        <div className="absolute -left-16 -top-20 h-64 w-64 rounded-full bg-[#e7d8fa]/65 blur-3xl"/>
+        <div className="absolute -bottom-24 right-10 h-64 w-64 rounded-full bg-[#d6f0e4]/70 blur-3xl"/>
+
+        <div className="relative grid gap-8 lg:grid-cols-[1fr_320px] lg:items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-[#f2ebfa] px-4 py-2 text-xs font-black text-[#7a61a0]">
+              <Sparkles size={15}/>
+              داشبورد نسل جدید
+            </span>
+            <h1 className="mt-5 text-3xl font-black leading-relaxed text-[#3e3447] sm:text-4xl">
+              سلام {user?.first_name || user?.username}،
+              <span className="text-[#c46f91]"> امروز چی می‌سازیم؟</span>
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-8 text-[#817689]">
+              سفارش، پروژه، فایل، پرداخت، رتبه و اشتراک را از یک فضای آرام و حرفه‌ای مدیریت کن.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/orders/new"
+                className="rounded-[18px] bg-[#6f57a0] px-5 py-3 text-sm font-black text-white shadow-lg shadow-purple-200"
+              >
+                ثبت سفارش
+              </Link>
+              <Link
+                href="/dashboard/editors"
+                className="rounded-[18px] bg-white px-5 py-3 text-sm font-black text-[#705b87] shadow-sm"
+              >
+                انتخاب ادیتور
+              </Link>
+            </div>
+          </div>
+
+          <div className="rounded-[30px] border border-white/80 bg-gradient-to-br from-[#fae8f0]/80 via-[#eee7fb]/80 to-[#e1f3eb]/80 p-6">
+            <Heart className="text-[#c36d8e]" fill="currentColor"/>
+            <strong className="mt-4 block text-2xl text-[#45394f]">
+              تجربه شخصی‌سازی‌شده
+            </strong>
+            <p className="mt-2 text-xs leading-6 text-[#82758b]">
+              کارت‌ها و میانبرها بر اساس نقش مشتری، آتلیه یا ادیتور تغییر می‌کنند.
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map(({ title, value, icon: Icon }) => (
+        {cards.map(({label,value,icon:Icon,bg,iconBg}) => (
           <article
-            key={title}
-            className="rounded-3xl border border-[#E5DDD2] bg-white p-5 shadow-sm"
+            key={label}
+            className={`rounded-[28px] border border-white/80 bg-gradient-to-br ${bg} p-5 shadow-sm`}
           >
             <div className="flex items-center justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F0EBE4] text-[#473C33]">
-                <Icon size={20} />
-              </div>
-              <strong className="text-3xl font-black text-[#332A23]">
-                {value}
-              </strong>
+              <span className={`grid h-12 w-12 place-items-center rounded-[18px] ${iconBg}`}>
+                <Icon size={20}/>
+              </span>
+              <strong className="text-3xl text-[#43384b]">{value}</strong>
             </div>
-            <p className="mt-4 text-sm font-bold text-[#6F6358]">{title}</p>
+            <p className="mt-5 text-sm font-bold text-[#746879]">{label}</p>
           </article>
         ))}
       </section>
 
-      {loading && (
-        <div className="mt-6 rounded-3xl border border-[#E5DDD2] bg-white p-8 text-sm text-[#776B60]">
-          در حال دریافت اطلاعات داشبورد...
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-6 rounded-3xl border border-[#E4BEBE] bg-[#FFF6F6] p-6 text-sm text-[#9B4949]">
-          دریافت اطلاعات از Backend ناموفق بود. Backend و تنظیمات
-          `NEXT_PUBLIC_API_BASE_URL` را بررسی کنید.
-        </div>
-      )}
-
-      {!loading && !error && (
-        <div className="mt-7 grid gap-7 xl:grid-cols-2">
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black text-[#332A23]">سفارش‌های اخیر</h2>
-              <span className="text-xs text-[#8B7F73]">{orderList.length} مورد</span>
+      <section className="grid gap-5 lg:grid-cols-3">
+        {[
+          ['/dashboard/profile','پروفایل کامل','هویت، آدرس و اطلاعات آتلیه'],
+          ['/dashboard/membership','اشتراک و تخفیف','پلن آتلیه و VIP'],
+          ['/dashboard/orders','سفارش‌های من','Workflow، فایل و تحویل'],
+        ].map(([href,title,text]) => (
+          <Link
+            key={href}
+            href={href}
+            className="group flex items-center gap-4 rounded-[26px] border border-white/80 bg-white/68 p-5 shadow-sm backdrop-blur-xl transition hover:-translate-y-1 hover:shadow-xl"
+          >
+            <div className="flex-1">
+              <strong className="text-[#463b4f]">{title}</strong>
+              <p className="mt-1 text-xs text-[#918697]">{text}</p>
             </div>
-            <div className="space-y-4">
-              {orderList.slice(0, 5).map((order) => (
-                <EntityCard
-                  key={order.id}
-                  title={order.title}
-                  subtitle={`سفارش شماره ${order.id}`}
-                  workflow={order.workflow}
-                  onTimeline={() =>
-                    setSelected({
-                      type: 'order',
-                      id: order.id,
-                      title: order.title,
-                    })
-                  }
-                />
-              ))}
-              {orderList.length === 0 && (
-                <EmptyState text="هنوز سفارشی برای این حساب وجود ندارد." />
-              )}
-            </div>
-          </section>
-
-          <section>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-black text-[#332A23]">درخواست‌های اخیر</h2>
-              <span className="text-xs text-[#8B7F73]">{projectList.length} مورد</span>
-            </div>
-            <div className="space-y-4">
-              {projectList.slice(0, 5).map((project) => (
-                <EntityCard
-                  key={project.id}
-                  title={project.title}
-                  subtitle={project.request_type_display || project.request_type}
-                  workflow={project.workflow}
-                  onTimeline={() =>
-                    setSelected({
-                      type: 'project',
-                      id: project.id,
-                      title: project.title,
-                    })
-                  }
-                />
-              ))}
-              {projectList.length === 0 && (
-                <EmptyState text="هنوز درخواستی برای این حساب وجود ندارد." />
-              )}
-            </div>
-          </section>
-        </div>
-      )}
-
-      <TimelinePanel
-        open={Boolean(selected)}
-        title={selected?.title || ''}
-        loading={
-          selected?.type === 'order'
-            ? orderTimeline.isLoading
-            : projectTimeline.isLoading
-        }
-        data={
-          selected?.type === 'order'
-            ? orderTimeline.data
-            : projectTimeline.data
-        }
-        onClose={() => setSelected(null)}
-      />
-    </>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-3xl border border-dashed border-[#D9CEC0] bg-white p-8 text-center text-sm text-[#8A7E72]">
-      {text}
+            <ArrowLeft className="text-[#a694b9] transition group-hover:-translate-x-1" size={18}/>
+          </Link>
+        ))}
+      </section>
     </div>
   );
 }

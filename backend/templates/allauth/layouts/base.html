@@ -1,0 +1,33 @@
+{% load static %}
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block head_title %}ورود به ریتاچر{% endblock %}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:Tahoma,Arial,sans-serif;color:#2d2d3a;background:#faf9fd}
+.shell{min-height:100vh;display:grid;grid-template-columns:minmax(0,1fr) 430px;grid-template-areas:"visual panel";direction:ltr}
+.visual{grid-area:visual;direction:rtl;display:flex;align-items:center;justify-content:center;padding:64px;background:linear-gradient(145deg,#fdf0f6,#f3f0fe 50%,#eef8f4)}
+.panel{grid-area:panel;direction:rtl;display:flex;align-items:center;justify-content:center;padding:32px;background:#fff}
+.story{max-width:560px;text-align:center}.logo{width:66px;height:66px;margin:auto;border-radius:22px;display:grid;place-items:center;color:#fff;font-size:31px;background:linear-gradient(135deg,#f2a8c4,#9b85e8)}
+.story h1{font-size:44px;line-height:1.45;margin:28px 0 12px}.story h1 span{color:#e07aa0}.story p{color:#77778a;line-height:2}
+.card{width:min(100%,390px);padding:34px;border:1px solid #ececf3;border-radius:30px;background:#fff;box-shadow:0 30px 80px rgba(50,40,90,.12)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:28px}.brand i{font-style:normal;width:38px;height:38px;border-radius:14px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#f2a8c4,#9b85e8)}
+.center{text-align:center}.google{width:64px;height:64px;border:1px solid #ececf3;border-radius:20px;display:grid;place-items:center;margin:0 auto 18px;font:bold 30px Arial;color:#4285f4}
+h2{font-size:25px;margin:0 0 10px}.lead{font-size:14px;line-height:1.9;color:#77778a}
+.spinner{width:34px;height:34px;border:3px solid #eee;border-top-color:#9b85e8;border-radius:50%;margin:24px auto;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.btn{width:100%;border:0;border-radius:15px;padding:14px 18px;display:flex;justify-content:center;align-items:center;text-decoration:none;font:600 14px Tahoma;cursor:pointer}
+.primary{color:#fff;background:linear-gradient(135deg,#e07aa0,#9b85e8)}.light{margin-top:10px;background:#f6f6fa;color:#555}.security{margin-top:20px;padding:13px;border-radius:14px;background:#f0faf5;color:#4f7d6a;font-size:12px}
+@media(max-width:900px){.shell{grid-template-columns:1fr;grid-template-areas:"panel"}.visual{display:none}.panel{min-height:100vh;padding:20px}}
+</style>
+</head>
+<body>
+<main class="shell">
+<section class="visual"><div class="story"><div class="logo">✦</div><h1>خلاقیت را <span>حرفه‌ای</span> تجربه کن</h1><p>از انتخاب ادیتور تا تحویل نهایی، همه‌چیز در یک مسیر شفاف و امن.</p></div></section>
+<section class="panel"><div class="card"><div class="brand"><i>✦</i>ریتاچر</div>{% block content %}{% endblock %}</div></section>
+</main>
+{% block extra_body %}{% endblock %}
+</body>
+</html>

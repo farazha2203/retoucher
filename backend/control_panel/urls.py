@@ -1,10 +1,16 @@
 from django.urls import path
 from operations_hub import views as operations_views
-from . import views
+from . import views, portfolio_views, social_views
 
 app_name = "control_panel"
 
 urlpatterns = [
+    path("portfolio-moderation/", portfolio_views.portfolio_moderation, name="portfolio_moderation"),
+    path("portfolio-moderation/<int:pk>/review/", portfolio_views.review_portfolio_item, name="review_portfolio_item"),
+    path("social-moderation/", social_views.social_moderation, name="social_moderation"),
+    path("social-moderation/comments/<int:pk>/", social_views.moderate_portfolio_comment, name="moderate_portfolio_comment"),
+    path("social-moderation/reports/<int:pk>/", social_views.moderate_portfolio_report, name="moderate_portfolio_report"),
+
     path("", views.dashboard, name="dashboard"),
     path("login/", views.PanelLoginView.as_view(), name="login"),
     path("logout/", views.PanelLogoutView.as_view(), name="logout"),
